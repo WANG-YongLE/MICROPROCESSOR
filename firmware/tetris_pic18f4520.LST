@@ -1,0 +1,2271 @@
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  1
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00001 ;==============================================================================
+                      00002 ;  File    : tetris_pic18f4520.asm
+                      00003 ;  Project : 2026 Microprocessor Final Project - Tetris (UART version)
+                      00004 ;  Target  : PIC18F4520, 10 MHz crystal, HSPLL -> Fosc = 40 MHz
+                      00005 ;  Tool    : MPLAB X IDE v5.20 + MPASM (absolute code, no linker needed)
+                      00006 ;
+                      00007 ;  Hardware
+                      00008 ;    RB0..RB5 : active-low push buttons with internal pull-ups
+                      00009 ;               RB0 = left, RB1 = right, RB2 = soft drop
+                      00010 ;               RB3 = hard drop, RB4 = rotate, RB5 = pause / restart
+                      00011 ;    RC6/TX   : UART TX -> USB-TTL module RXD (115200, 8N1)
+                      00012 ;    RC7/RX   : UART RX (not used by the game, keep connected or open)
+                      00013 ;    Timer0   : 1 ms interrupt, used for key debounce and gravity timing
+                      00014 ;
+                      00015 ;  UART frame (fixed 208 bytes, little endian for score)
+                      00016 ;    [0]      0xA5          start byte 1
+                      00017 ;    [1]      0x5A          start byte 2
+                      00018 ;    [2..201] board         10 columns x 20 rows
+                      00019 ;                           byte value 0 = empty, 1 = fixed block, 2 = active
+                      00020 ;    [202]    score high
+                      00021 ;    [203]    score low
+                      00022 ;    [204]    lines
+                      00023 ;    [205]    level
+                      00024 ;    [206]    state : 0 = running, 1 = paused, 2 = game over
+                      00025 ;    [207]    checksum : XOR of byte 0 .. byte 206
+                      00026 ;
+                      00027 ;  Board layout : index = row * 10 + column, row 0 = top, row 19 = bottom
+                      00028 ;  Piece table  : 7 pieces x 4 rotations x 4 rows, row mask bit0 = column 0
+                      00029 ;==============================================================================
+                      00030 
+                      00031         LIST    P=18F4520
+                      00032         #include <P18F4520.INC>
+                      00001         LIST
+                      00002 
+                      00003 ;==========================================================================
+                      00004 ; Build date : Mar 17 2019
+                      00005 ;  MPASM PIC18F4520 processor include
+                      00006 ; 
+                      00007 ;  (c) Copyright 1999-2019 Microchip Technology, All rights reserved
+                      00008 ;==========================================================================
+                      00009 
+                      01489         LIST
+                      00033 
+                      00034 ;------------------------------------------------------------------------------
+                      00035 ; Configuration bits
+                      00036 ;------------------------------------------------------------------------------
+06 18 1E 80 81 0F C0 000037         CONFIG  OSC = HSPLL             ; HS crystal with 4x PLL
+       F E0 0F 40 
+                      00038         CONFIG  FCMEN = OFF
+                      00039         CONFIG  IESO = OFF
+                      00040         CONFIG  PWRT = ON
+                      00041         CONFIG  BOREN = OFF
+                      00042         CONFIG  BORV = 3
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  2
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00043         CONFIG  WDT = OFF
+                      00044         CONFIG  WDTPS = 32768
+                      00045         CONFIG  CCP2MX = PORTBE
+                      00046         CONFIG  PBADEN = OFF            ; RB0..RB4 digital I/O at reset
+                      00047         CONFIG  LPT1OSC = OFF
+                      00048         CONFIG  MCLRE = ON              ; MCLR pin enabled
+                      00049         CONFIG  STVREN = ON
+                      00050         CONFIG  LVP = OFF               ; high voltage ICSP
+                      00051         CONFIG  XINST = OFF
+                      00052         CONFIG  DEBUG = OFF
+                      00053         CONFIG  CP0 = OFF
+                      00054         CONFIG  CP1 = OFF
+                      00055         CONFIG  CP2 = OFF
+                      00056         CONFIG  CP3 = OFF
+                      00057         CONFIG  CPB = OFF
+                      00058         CONFIG  CPD = OFF
+                      00059         CONFIG  WRT0 = OFF
+                      00060         CONFIG  WRT1 = OFF
+                      00061         CONFIG  WRT2 = OFF
+                      00062         CONFIG  WRT3 = OFF
+                      00063         CONFIG  WRTC = OFF
+                      00064         CONFIG  WRTB = OFF
+                      00065         CONFIG  WRTD = OFF
+                      00066         CONFIG  EBTR0 = OFF
+                      00067         CONFIG  EBTR1 = OFF
+                      00068         CONFIG  EBTR2 = OFF
+                      00069         CONFIG  EBTR3 = OFF
+                      00070         CONFIG  EBTRB = OFF
+                      00071 
+                      00072 ;------------------------------------------------------------------------------
+                      00073 ; Variables (access RAM, 0x000 - 0x05F)
+                      00074 ;------------------------------------------------------------------------------
+                      00075         CBLOCK  0x000
+  00000000            00076 tick_ms                 ; 1 ms counter, 0..9 -> 10 ms scan tick
+  00000001            00077 hb_cnt                  ; heartbeat counter, 100 ms
+  00000002            00078 key_last                ; previous raw key sample
+  00000003            00079 key_stable              ; debounced key state (1 = pressed)
+  00000004            00080 rep_l                   ; repeat counter for left
+  00000005            00081 rep_r                   ; repeat counter for right
+  00000006            00082 rep_d                   ; repeat counter for soft drop
+  00000007            00083 act_flags               ; actions: b0 left b1 right b2 soft b3 hard
+                      00084                         ;          b4 rotate b5 pause b6 gravity b7 heartbeat
+  00000008            00085 snap                    ; snapshot of act_flags in main loop
+  00000009            00086 frame_dirty             ; b0 = board changed, send a new frame
+  0000000A            00087 ptype                   ; current piece type 0..6
+  0000000B            00088 prot                    ; current rotation 0..3
+  0000000C            00089 px                      ; piece box x position 0..6
+  0000000D            00090 py                      ; piece box y position 0..19
+  0000000E            00091 chk_x                   ; collision test x
+  0000000F            00092 chk_y                   ; collision test y
+  00000010            00093 chk_rot                 ; collision test rotation
+  00000011            00094 new_rot                 ; rotation candidate
+  00000012            00095 kick_idx                ; wall kick table index
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  3
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+  00000013            00096 gm_piece                ; get_mask parameter: piece
+  00000014            00097 gm_rot                  ; get_mask parameter: rotation
+  00000015            00098 tbl_ofs                 ; table offset temporary
+  00000016            00099 t_r                     ; row loop index
+  00000017            00100 t_c                     ; column loop index
+  00000018            00101 t_mask                  ; current row mask
+  00000019            00102 t_ny                    ; cell row under test
+  0000001A            00103 t_nx                    ; cell column under test
+  0000001B            00104 t_row                   ; get_mask parameter: row
+  0000001C            00105 score_h                 ; score high byte
+  0000001D            00106 score_l                 ; score low byte
+  0000001E            00107 line_count              ; total cleared lines
+  0000001F            00108 clear_cnt               ; number of line-clear events
+  00000020            00109 level_num               ; level 1..10
+  00000021            00110 grav_ms                 ; gravity period in 10 ms ticks
+  00000022            00111 grav_cnt                ; gravity countdown in 10 ms ticks
+  00000023            00112 game_state              ; 0 run, 1 pause, 2 game over
+  00000024            00113 seed                    ; pseudo random seed
+  00000025            00114 row_idx                 ; row scan index for line clear
+  00000026            00115 n_lines                 ; lines cleared by the last lock
+  00000027            00116 shift_k                 ; row shift loop index
+  00000028            00117 shift_ofs               ; row shift offset
+  00000029            00118 tmpx                    ; generic loop counter
+  0000002A            00119 checksum                ; UART checksum
+  0000002B            00120 tmp_raw                 ; raw key sample
+                      00121         ENDC
+                      00122 
+  00000100            00123 board   EQU 0x100       ; 200 bytes : 10 x 20
+  00000200            00124 txbuf   EQU 0x200       ; 208 bytes : complete UART frame copy buffer
+                      00125 
+                      00126 ;------------------------------------------------------------------------------
+                      00127 ; Reset and interrupt vectors
+                      00128 ;------------------------------------------------------------------------------
+000000                00129         ORG     0x0000
+000000 EF66 F002      00130         goto    main
+                      00131 
+000008                00132         ORG     0x0008
+000008 EF06 F000      00133         goto    HighInt
+                      00134 
+                      00135 ;------------------------------------------------------------------------------
+                      00136 ; High priority interrupt : Timer0 every 1 ms
+                      00137 ;------------------------------------------------------------------------------
+00000C                00138 HighInt:
+00000C 0005           00139         push                            ; save W, STATUS, BSR
+                      00140 
+00000E 94F2           00141         bcf     INTCON,TMR0IF
+000010 0ED8           00142         movlw   0xD8                    ; reload for 1.000 ms at 40 MHz
+000012 6ED7           00143         movwf   TMR0H                   ; 65536 - 10000 = 0xD8F0
+000014 0EF0           00144         movlw   0xF0
+000016 6ED6           00145         movwf   TMR0L
+                      00146 
+                      00147         ; ---- 100 ms heartbeat : ask main loop to send a frame ----
+000018 2A01           00148         incf    hb_cnt,F
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  4
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+00001A 0E64           00149         movlw   d'100'
+00001C 6201           00150         cpfseq  hb_cnt
+00001E D002           00151         bra     isr_scan
+000020 6A01           00152         clrf    hb_cnt
+000022 8E07           00153         bsf     act_flags,7
+                      00154 
+000024                00155 isr_scan:
+                      00156         ; ---- key scan every 10 ms ----
+000024 2A00           00157         incf    tick_ms,F
+000026 0E0A           00158         movlw   d'10'
+000028 6200           00159         cpfseq  tick_ms
+00002A D00A           00160         bra     isr_done
+00002C 6A00           00161         clrf    tick_ms
+00002E EC22 F000      00162         call    scan_keys
+                      00163 
+                      00164         ; ---- gravity countdown after each 10 ms scan, only while running ----
+000032 5023           00165         movf    game_state,W
+000034 E105           00166         bnz     isr_done
+000036 0622           00167         decf    grav_cnt,F
+000038 E103           00168         bnz     isr_done
+00003A 5021           00169         movf    grav_ms,W
+00003C 6E22           00170         movwf   grav_cnt
+00003E 8C07           00171         bsf     act_flags,6
+                      00172 
+000040                00173 isr_done:
+000040 0006           00174         pop                             ; restore BSR, STATUS, W
+000042 0010           00175         retfie
+                      00176 
+                      00177 ;------------------------------------------------------------------------------
+                      00178 ; scan_keys : called every 10 ms from the Timer0 interrupt
+                      00179 ; Two identical samples are needed, so a key is debounced over 20 ms.
+                      00180 ; Press edges set action flags. Left / right / soft drop auto-repeat.
+                      00181 ;------------------------------------------------------------------------------
+000044                00182 scan_keys:
+000044 5081           00183         movf    PORTB,W
+000046 0B3F           00184         andlw   0x3F                    ; RB0..RB5 only
+000048 0A3F           00185         xorlw   0x3F                    ; invert: 1 = pressed
+00004A 6E2B           00186         movwf   tmp_raw
+                      00187 
+00004C 1802           00188         xorwf   key_last,W              ; same as previous sample ?
+00004E E003           00189         bz      keys_same
+000050 502B           00190         movf    tmp_raw,W               ; new sample, wait for confirmation
+000052 6E02           00191         movwf   key_last
+000054 0012           00192         return
+                      00193 
+000056                00194 keys_same:
+000056 502B           00195         movf    tmp_raw,W
+000058 1803           00196         xorwf   key_stable,W            ; state changed ?
+00005A E017           00197         bz      keys_held
+                      00198         ; ---- new pressed bits = raw AND (raw XOR stable) ----
+00005C 502B           00199         movf    tmp_raw,W
+00005E 1803           00200         xorwf   key_stable,W
+000060 142B           00201         andwf   tmp_raw,W
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  5
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+000062 B0E8           00202         btfsc   WREG,0
+000064 8007           00203         bsf     act_flags,0             ; left
+000066 B2E8           00204         btfsc   WREG,1
+000068 8207           00205         bsf     act_flags,1             ; right
+00006A B4E8           00206         btfsc   WREG,2
+00006C 8407           00207         bsf     act_flags,2             ; soft drop
+00006E B6E8           00208         btfsc   WREG,3
+000070 8607           00209         bsf     act_flags,3             ; hard drop
+000072 B8E8           00210         btfsc   WREG,4
+000074 8807           00211         bsf     act_flags,4             ; rotate
+000076 BAE8           00212         btfsc   WREG,5
+000078 8A07           00213         bsf     act_flags,5             ; pause / restart
+                      00214         ; ---- clear repeat counters of released keys ----
+00007A A02B           00215         btfss   tmp_raw,0
+00007C 6A04           00216         clrf    rep_l
+00007E A22B           00217         btfss   tmp_raw,1
+000080 6A05           00218         clrf    rep_r
+000082 A42B           00219         btfss   tmp_raw,2
+000084 6A06           00220         clrf    rep_d
+000086 502B           00221         movf    tmp_raw,W
+000088 6E03           00222         movwf   key_stable
+                      00223 
+00008A                00224 keys_held:
+                      00225         ; ---- auto repeat : first after ~80 ms, then every ~30 ms ----
+00008A A003           00226         btfss   key_stable,0
+00008C D007           00227         bra     keys_chk_right
+00008E 2A04           00228         incf    rep_l,F
+000090 0E08           00229         movlw   d'8'
+000092 6204           00230         cpfseq  rep_l
+000094 D003           00231         bra     keys_chk_right
+000096 0E05           00232         movlw   d'5'
+000098 6E04           00233         movwf   rep_l
+00009A 8007           00234         bsf     act_flags,0
+                      00235 
+00009C                00236 keys_chk_right:
+00009C A203           00237         btfss   key_stable,1
+00009E D007           00238         bra     keys_chk_down
+0000A0 2A05           00239         incf    rep_r,F
+0000A2 0E08           00240         movlw   d'8'
+0000A4 6205           00241         cpfseq  rep_r
+0000A6 D003           00242         bra     keys_chk_down
+0000A8 0E05           00243         movlw   d'5'
+0000AA 6E05           00244         movwf   rep_r
+0000AC 8207           00245         bsf     act_flags,1
+                      00246 
+0000AE                00247 keys_chk_down:
+0000AE A403           00248         btfss   key_stable,2
+0000B0 D007           00249         bra     keys_exit
+0000B2 2A06           00250         incf    rep_d,F
+0000B4 0E08           00251         movlw   d'8'
+0000B6 6206           00252         cpfseq  rep_d
+0000B8 D003           00253         bra     keys_exit
+0000BA 0E05           00254         movlw   d'5'
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  6
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0000BC 6E06           00255         movwf   rep_d
+0000BE 8407           00256         bsf     act_flags,2
+                      00257 
+0000C0                00258 keys_exit:
+0000C0 0012           00259         return
+                      00260 
+                      00261 ;------------------------------------------------------------------------------
+                      00262 ; board_ptr0 / board_ptr1 : W = byte offset, returns board + offset
+                      00263 ;------------------------------------------------------------------------------
+0000C2                00264 board_ptr0:
+0000C2 6EE9           00265         movwf   FSR0L
+0000C4 6AEA           00266         clrf    FSR0H
+0000C6 0E00           00267         movlw   LOW(board)
+0000C8 26E9           00268         addwf   FSR0L,F
+0000CA 0E01           00269         movlw   HIGH(board)
+0000CC 22EA           00270         addwfc  FSR0H,F
+0000CE 0012           00271         return
+                      00272 
+0000D0                00273 board_ptr1:
+0000D0 6EE1           00274         movwf   FSR1L
+0000D2 6AE2           00275         clrf    FSR1H
+0000D4 0E00           00276         movlw   LOW(board)
+0000D6 26E1           00277         addwf   FSR1L,F
+0000D8 0E01           00278         movlw   HIGH(board)
+0000DA 22E2           00279         addwfc  FSR1H,F
+0000DC 0012           00280         return
+                      00281 
+0000DE                00282 tx_ptr1:
+0000DE 6EE1           00283         movwf   FSR1L
+0000E0 6AE2           00284         clrf    FSR1H
+0000E2 0E00           00285         movlw   LOW(txbuf)
+0000E4 26E1           00286         addwf   FSR1L,F
+0000E6 0E02           00287         movlw   HIGH(txbuf)
+0000E8 22E2           00288         addwfc  FSR1H,F
+0000EA 0012           00289         return
+                      00290 
+                      00291 ;------------------------------------------------------------------------------
+                      00292 ; get_mask : W = row 0..3, returns 4-bit row mask of gm_piece / gm_rot
+                      00293 ;------------------------------------------------------------------------------
+0000EC                00294 get_mask:
+0000EC 6E1B           00295         movwf   t_row
+0000EE 5013           00296         movf    gm_piece,W
+0000F0 0D10           00297         mullw   d'16'                   ; piece * 16
+0000F2 50F3           00298         movf    PRODL,W
+0000F4 6E15           00299         movwf   tbl_ofs
+0000F6 5014           00300         movf    gm_rot,W
+0000F8 0D04           00301         mullw   d'4'                    ; rotation * 4
+0000FA 50F3           00302         movf    PRODL,W
+0000FC 2415           00303         addwf   tbl_ofs,W
+0000FE 241B           00304         addwf   t_row,W                 ; + row
+000100 6EF6           00305         movwf   TBLPTRL
+000102 6AF7           00306         clrf    TBLPTRH
+000104 6AF8           00307         clrf    TBLPTRU
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  7
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+000106 0E86           00308         movlw   LOW(piece_table)
+000108 26F6           00309         addwf   TBLPTRL,F
+00010A 0E05           00310         movlw   HIGH(piece_table)
+00010C 22F7           00311         addwfc  TBLPTRH,F
+00010E 0E00           00312         movlw   0x00
+000110 22F8           00313         addwfc  TBLPTRU,F
+000112 0008           00314         tblrd   *
+000114 50F5           00315         movf    TABLAT,W
+000116 0012           00316         return
+                      00317 
+                      00318 ;------------------------------------------------------------------------------
+                      00319 ; get_kick : W = index 0..4, returns signed wall kick offset
+                      00320 ;------------------------------------------------------------------------------
+000118                00321 get_kick:
+000118 6EF6           00322         movwf   TBLPTRL
+00011A 6AF7           00323         clrf    TBLPTRH
+00011C 6AF8           00324         clrf    TBLPTRU
+00011E 0E80           00325         movlw   LOW(kick_tab)
+000120 26F6           00326         addwf   TBLPTRL,F
+000122 0E05           00327         movlw   HIGH(kick_tab)
+000124 22F7           00328         addwfc  TBLPTRH,F
+000126 0008           00329         tblrd   *
+000128 50F5           00330         movf    TABLAT,W
+00012A 0012           00331         return
+                      00332 
+                      00333 ;------------------------------------------------------------------------------
+                      00334 ; collision : test piece at chk_x, chk_y, chk_rot
+                      00335 ; returns W = 0 (free), W = 1 (collision)
+                      00336 ;------------------------------------------------------------------------------
+00012C                00337 collision:
+00012C 500A           00338         movf    ptype,W
+00012E 6E13           00339         movwf   gm_piece
+000130 5010           00340         movf    chk_rot,W
+000132 6E14           00341         movwf   gm_rot
+000134 6A16           00342         clrf    t_r
+                      00343 
+000136                00344 col_row_loop:
+000136 5016           00345         movf    t_r,W
+000138 EC76 F000      00346         call    get_mask
+00013C 0B0F           00347         andlw   0x0F
+00013E 6E18           00348         movwf   t_mask
+000140 E01C           00349         bz      col_next_row
+000142 6A17           00350         clrf    t_c
+                      00351 
+000144                00352 col_col_loop:
+000144 A018           00353         btfss   t_mask,0
+000146 D014           00354         bra     col_next_col
+                      00355         ; ---- row bounds ----
+000148 500F           00356         movf    chk_y,W
+00014A 2416           00357         addwf   t_r,W
+00014C 6E19           00358         movwf   t_ny
+00014E 0E14           00359         movlw   d'20'
+000150 6019           00360         cpfslt  t_ny                    ; skip if t_ny < 20
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  8
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+000152 0C01           00361         retlw   1
+                      00362         ; ---- column bounds ----
+000154 500E           00363         movf    chk_x,W
+000156 2417           00364         addwf   t_c,W
+000158 6E1A           00365         movwf   t_nx
+00015A 0E0A           00366         movlw   d'10'
+00015C 601A           00367         cpfslt  t_nx                    ; skip if t_nx < 10
+00015E 0C01           00368         retlw   1
+                      00369         ; ---- board cell check ----
+000160 5019           00370         movf    t_ny,W
+000162 0D0A           00371         mullw   d'10'
+000164 501A           00372         movf    t_nx,W
+000166 24F3           00373         addwf   PRODL,W
+000168 EC61 F000      00374         call    board_ptr0
+00016C 50EF           00375         movf    INDF0,W
+00016E E10A           00376         bnz     col_hit
+                      00377 
+000170                00378 col_next_col:
+000170 4218           00379         rrncf   t_mask,F
+000172 2A17           00380         incf    t_c,F
+000174 0E04           00381         movlw   d'4'
+000176 6217           00382         cpfseq  t_c
+000178 D7E5           00383         bra     col_col_loop
+                      00384 
+00017A                00385 col_next_row:
+00017A 2A16           00386         incf    t_r,F
+00017C 0E04           00387         movlw   d'4'
+00017E 6216           00388         cpfseq  t_r
+000180 D7DA           00389         bra     col_row_loop
+000182 0C00           00390         retlw   0
+                      00391 
+000184                00392 col_hit:
+000184 0C01           00393         retlw   1
+                      00394 
+                      00395 ;------------------------------------------------------------------------------
+                      00396 ; move_left / move_right
+                      00397 ;------------------------------------------------------------------------------
+000186                00398 move_left:
+000186 500C           00399         movf    px,W
+000188 E00D           00400         bz      move_left_ret           ; already at the left wall
+00018A 0FFF           00401         addlw   0xFF                    ; px - 1
+00018C 6E0E           00402         movwf   chk_x
+00018E 500D           00403         movf    py,W
+000190 6E0F           00404         movwf   chk_y
+000192 500B           00405         movf    prot,W
+000194 6E10           00406         movwf   chk_rot
+000196 EC96 F000      00407         call    collision
+00019A B0E8           00408         btfsc   WREG,0
+00019C D003           00409         bra     move_left_ret
+00019E 500E           00410         movf    chk_x,W
+0001A0 6E0C           00411         movwf   px
+0001A2 8009           00412         bsf     frame_dirty,0
+                      00413 
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE  9
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0001A4                00414 move_left_ret:
+0001A4 0012           00415         return
+                      00416 
+0001A6                00417 move_right:
+0001A6 500C           00418         movf    px,W
+0001A8 0F01           00419         addlw   1
+0001AA 6E0E           00420         movwf   chk_x
+0001AC 0E07           00421         movlw   d'7'
+0001AE 600E           00422         cpfslt  chk_x                   ; skip if chk_x < 7
+0001B0 D00B           00423         bra     move_right_ret          ; box is 4 wide, max x = 6
+0001B2 500D           00424         movf    py,W
+0001B4 6E0F           00425         movwf   chk_y
+0001B6 500B           00426         movf    prot,W
+0001B8 6E10           00427         movwf   chk_rot
+0001BA EC96 F000      00428         call    collision
+0001BE B0E8           00429         btfsc   WREG,0
+0001C0 D003           00430         bra     move_right_ret
+0001C2 500E           00431         movf    chk_x,W
+0001C4 6E0C           00432         movwf   px
+0001C6 8009           00433         bsf     frame_dirty,0
+                      00434 
+0001C8                00435 move_right_ret:
+0001C8 0012           00436         return
+                      00437 
+                      00438 ;------------------------------------------------------------------------------
+                      00439 ; do_rotate : rotate clockwise with simple wall kicks (0, -1, +1, -2, +2)
+                      00440 ;------------------------------------------------------------------------------
+0001CA                00441 do_rotate:
+0001CA 0E01           00442         movlw   d'1'                    ; O piece does not need rotation
+0001CC 620A           00443         cpfseq  ptype
+0001CE D001           00444         bra     rot_go
+0001D0 0012           00445         return
+                      00446 
+0001D2                00447 rot_go:
+0001D2 500B           00448         movf    prot,W
+0001D4 0F01           00449         addlw   1
+0001D6 0B03           00450         andlw   0x03
+0001D8 6E11           00451         movwf   new_rot
+0001DA 6A12           00452         clrf    kick_idx
+                      00453 
+0001DC                00454 rot_kick_loop:
+0001DC 5012           00455         movf    kick_idx,W
+0001DE EC8C F000      00456         call    get_kick
+0001E2 240C           00457         addwf   px,W
+0001E4 6E0E           00458         movwf   chk_x
+0001E6 0E07           00459         movlw   d'7'
+0001E8 600E           00460         cpfslt  chk_x                   ; skip if chk_x < 7
+0001EA D008           00461         bra     rot_kick_next
+0001EC 500D           00462         movf    py,W
+0001EE 6E0F           00463         movwf   chk_y
+0001F0 5011           00464         movf    new_rot,W
+0001F2 6E10           00465         movwf   chk_rot
+0001F4 EC96 F000      00466         call    collision
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 10
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0001F8 A0E8           00467         btfss   WREG,0
+0001FA D005           00468         bra     rot_ok
+                      00469 
+0001FC                00470 rot_kick_next:
+0001FC 2A12           00471         incf    kick_idx,F
+0001FE 0E05           00472         movlw   d'5'
+000200 6212           00473         cpfseq  kick_idx
+000202 D7EC           00474         bra     rot_kick_loop
+000204 0012           00475         return
+                      00476 
+000206                00477 rot_ok:
+000206 500E           00478         movf    chk_x,W
+000208 6E0C           00479         movwf   px
+00020A 5011           00480         movf    new_rot,W
+00020C 6E0B           00481         movwf   prot
+00020E 8009           00482         bsf     frame_dirty,0
+000210 0012           00483         return
+                      00484 
+                      00485 ;------------------------------------------------------------------------------
+                      00486 ; soft_drop : one step down, lock when blocked
+                      00487 ;------------------------------------------------------------------------------
+000212                00488 soft_drop:
+000212 500D           00489         movf    py,W
+000214 0F01           00490         addlw   1
+000216 6E0F           00491         movwf   chk_y
+000218 500C           00492         movf    px,W
+00021A 6E0E           00493         movwf   chk_x
+00021C 500B           00494         movf    prot,W
+00021E 6E10           00495         movwf   chk_rot
+000220 EC96 F000      00496         call    collision
+000224 B0E8           00497         btfsc   WREG,0
+000226 D003           00498         bra     soft_lock
+000228 2A0D           00499         incf    py,F
+00022A 8009           00500         bsf     frame_dirty,0
+00022C 0012           00501         return
+                      00502 
+00022E                00503 soft_lock:
+00022E EC2B F001      00504         call    lock_piece
+000232 0012           00505         return
+                      00506 
+                      00507 ;------------------------------------------------------------------------------
+                      00508 ; hard_drop : move down until blocked, then lock
+                      00509 ;------------------------------------------------------------------------------
+000234                00510 hard_drop:
+000234                00511 hard_loop:
+000234 500D           00512         movf    py,W
+000236 0F01           00513         addlw   1
+000238 6E0F           00514         movwf   chk_y
+00023A 500C           00515         movf    px,W
+00023C 6E0E           00516         movwf   chk_x
+00023E 500B           00517         movf    prot,W
+000240 6E10           00518         movwf   chk_rot
+000242 EC96 F000      00519         call    collision
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 11
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+000246 B0E8           00520         btfsc   WREG,0
+000248 D003           00521         bra     hard_lock
+00024A 2A0D           00522         incf    py,F
+00024C 8009           00523         bsf     frame_dirty,0
+00024E D7F2           00524         bra     hard_loop
+                      00525 
+000250                00526 hard_lock:
+000250 EC2B F001      00527         call    lock_piece
+000254 0012           00528         return
+                      00529 
+                      00530 ;------------------------------------------------------------------------------
+                      00531 ; lock_piece : copy the 4 cells into the board, clear lines, spawn next piece
+                      00532 ;------------------------------------------------------------------------------
+000256                00533 lock_piece:
+000256 500A           00534         movf    ptype,W
+000258 6E13           00535         movwf   gm_piece
+00025A 500B           00536         movf    prot,W
+00025C 6E14           00537         movwf   gm_rot
+00025E 6A16           00538         clrf    t_r
+                      00539 
+000260                00540 lock_row_loop:
+000260 5016           00541         movf    t_r,W
+000262 EC76 F000      00542         call    get_mask
+000266 0B0F           00543         andlw   0x0F
+000268 6E18           00544         movwf   t_mask
+00026A E012           00545         bz      lock_next_row
+00026C 6A17           00546         clrf    t_c
+                      00547 
+00026E                00548 lock_col_loop:
+00026E A018           00549         btfss   t_mask,0
+000270 D00A           00550         bra     lock_next_col
+000272 500D           00551         movf    py,W
+000274 2416           00552         addwf   t_r,W
+000276 0D0A           00553         mullw   d'10'
+000278 500C           00554         movf    px,W
+00027A 24F3           00555         addwf   PRODL,W
+00027C 2417           00556         addwf   t_c,W
+00027E EC61 F000      00557         call    board_ptr0
+000282 0E01           00558         movlw   0x01
+000284 6EEF           00559         movwf   INDF0
+                      00560 
+000286                00561 lock_next_col:
+000286 4218           00562         rrncf   t_mask,F
+000288 2A17           00563         incf    t_c,F
+00028A 0E04           00564         movlw   d'4'
+00028C 6217           00565         cpfseq  t_c
+00028E D7EF           00566         bra     lock_col_loop
+                      00567 
+000290                00568 lock_next_row:
+000290 2A16           00569         incf    t_r,F
+000292 0E04           00570         movlw   d'4'
+000294 6216           00571         cpfseq  t_r
+000296 D7E4           00572         bra     lock_row_loop
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 12
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00573 
+000298 EC5F F001      00574         call    clear_lines
+00029C ECBC F001      00575         call    spawn_piece
+0002A0 8009           00576         bsf     frame_dirty,0
+0002A2 0012           00577         return
+                      00578 
+                      00579 ;------------------------------------------------------------------------------
+                      00580 ; row_full : check row_idx, returns W = 1 when all 10 cells are occupied
+                      00581 ;------------------------------------------------------------------------------
+0002A4                00582 row_full:
+0002A4 5025           00583         movf    row_idx,W
+0002A6 0D0A           00584         mullw   d'10'
+0002A8 50F3           00585         movf    PRODL,W
+0002AA EC61 F000      00586         call    board_ptr0
+0002AE 0E0A           00587         movlw   d'10'
+0002B0 6E17           00588         movwf   t_c
+                      00589 
+0002B2                00590 row_full_loop:
+0002B2 50EE           00591         movf    POSTINC0,W
+0002B4 E003           00592         bz      row_full_no
+0002B6 0617           00593         decf    t_c,F
+0002B8 E1FC           00594         bnz     row_full_loop
+0002BA 0C01           00595         retlw   1
+                      00596 
+0002BC                00597 row_full_no:
+0002BC 0C00           00598         retlw   0
+                      00599 
+                      00600 ;------------------------------------------------------------------------------
+                      00601 ; clear_lines : scan from bottom, clear full rows, update score / level
+                      00602 ;------------------------------------------------------------------------------
+0002BE                00603 clear_lines:
+0002BE 6A26           00604         clrf    n_lines
+0002C0 0E13           00605         movlw   d'19'
+0002C2 6E25           00606         movwf   row_idx
+                      00607 
+0002C4                00608 clear_scan:
+0002C4 EC52 F001      00609         call    row_full
+0002C8 A0E8           00610         btfss   WREG,0
+0002CA D022           00611         bra     clear_scan_up
+                      00612         ; ---- full row found ----
+0002CC 2A26           00613         incf    n_lines,F
+0002CE 5025           00614         movf    row_idx,W
+0002D0 E015           00615         bz      clear_top_row
+                      00616         ; ---- shift every row above down by one, bottom to top ----
+0002D2 5025           00617         movf    row_idx,W
+0002D4 6E27           00618         movwf   shift_k
+                      00619 
+0002D6                00620 shift_row_loop:
+0002D6 5027           00621         movf    shift_k,W
+0002D8 0D0A           00622         mullw   d'10'
+0002DA 50F3           00623         movf    PRODL,W
+0002DC 6E28           00624         movwf   shift_ofs
+0002DE 0FF6           00625         addlw   0xF6                    ; source = destination - 10
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 13
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0002E0 EC61 F000      00626         call    board_ptr0
+0002E4 5028           00627         movf    shift_ofs,W
+0002E6 EC68 F000      00628         call    board_ptr1
+0002EA 0E0A           00629         movlw   d'10'
+0002EC 6E29           00630         movwf   tmpx
+                      00631 
+0002EE                00632 shift_byte_loop:
+0002EE 50EE           00633         movf    POSTINC0,W
+0002F0 6EE6           00634         movwf   POSTINC1
+0002F2 0629           00635         decf    tmpx,F
+0002F4 E1FC           00636         bnz     shift_byte_loop
+0002F6 0627           00637         decf    shift_k,F
+0002F8 5027           00638         movf    shift_k,W
+0002FA E1ED           00639         bnz     shift_row_loop
+                      00640 
+0002FC                00641 clear_top_row:
+0002FC 0E00           00642         movlw   LOW(board)
+0002FE 6EE9           00643         movwf   FSR0L
+000300 0E01           00644         movlw   HIGH(board)
+000302 6EEA           00645         movwf   FSR0H
+000304 0E0A           00646         movlw   d'10'
+000306 6E29           00647         movwf   tmpx
+000308                00648 clear_top_loop:
+000308 6AEE           00649         clrf    POSTINC0
+00030A 0629           00650         decf    tmpx,F
+00030C E1FD           00651         bnz     clear_top_loop
+00030E D7DA           00652         bra     clear_scan              ; re-check the same row
+                      00653 
+000310                00654 clear_scan_up:
+000310 5025           00655         movf    row_idx,W
+000312 E002           00656         bz      clear_done
+000314 0625           00657         decf    row_idx,F
+000316 D7D6           00658         bra     clear_scan
+                      00659 
+000318                00660 clear_done:
+                      00661         ; ---- score / level / speed ----
+000318 5026           00662         movf    n_lines,W
+00031A E02D           00663         bz      clear_exit
+00031C 2A1F           00664         incf    clear_cnt,F
+                      00665         ; level = (clear_cnt / 4) + 1
+00031E 501F           00666         movf    clear_cnt,W
+000320 40E8           00667         rrncf   WREG,W
+000322 40E8           00668         rrncf   WREG,W
+000324 0F01           00669         addlw   1
+000326 6E20           00670         movwf   level_num
+                      00671         ; every 4 clear events, gravity period -5 ticks (50 ms), minimum 10 ticks (100 ms)
+000328 501F           00672         movf    clear_cnt,W
+00032A 0B03           00673         andlw   0x03
+00032C E105           00674         bnz     clear_add_score
+00032E 0E0A           00675         movlw   d'10'
+000330 6421           00676         cpfsgt  grav_ms                 ; skip if grav_ms > 10
+000332 D002           00677         bra     clear_add_score
+000334 0E05           00678         movlw   d'5'
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 14
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+000336 5E21           00679         subwf   grav_ms,F
+                      00680 
+000338                00681 clear_add_score:
+000338 5026           00682         movf    n_lines,W
+00033A 0FFF           00683         addlw   0xFF
+00033C E007           00684         bz      clear_add_100
+00033E 5026           00685         movf    n_lines,W
+000340 0FFE           00686         addlw   0xFE
+000342 E009           00687         bz      clear_add_300
+000344 5026           00688         movf    n_lines,W
+000346 0FFD           00689         addlw   0xFD
+000348 E00B           00690         bz      clear_add_500
+00034A D00F           00691         bra     clear_add_800
+                      00692 
+00034C                00693 clear_add_100:
+00034C 0E64           00694         movlw   0x64                    ; +100 = 0x0064
+00034E 261D           00695         addwf   score_l,F
+000350 0E00           00696         movlw   0x00
+000352 221C           00697         addwfc  score_h,F
+000354 D00E           00698         bra     clear_score_done
+                      00699 
+000356                00700 clear_add_300:
+000356 0E2C           00701         movlw   0x2C                    ; +300 = 0x012C
+000358 261D           00702         addwf   score_l,F
+00035A 0E01           00703         movlw   0x01
+00035C 221C           00704         addwfc  score_h,F
+00035E D009           00705         bra     clear_score_done
+                      00706 
+000360                00707 clear_add_500:
+000360 0EF4           00708         movlw   0xF4                    ; +500 = 0x01F4
+000362 261D           00709         addwf   score_l,F
+000364 0E01           00710         movlw   0x01
+000366 221C           00711         addwfc  score_h,F
+000368 D004           00712         bra     clear_score_done
+                      00713 
+00036A                00714 clear_add_800:
+00036A 0E20           00715         movlw   0x20                    ; +800 = 0x0320
+00036C 261D           00716         addwf   score_l,F
+00036E 0E03           00717         movlw   0x03
+000370 221C           00718         addwfc  score_h,F
+                      00719 
+000372                00720 clear_score_done:
+000372 5026           00721         movf    n_lines,W
+000374 261E           00722         addwf   line_count,F
+                      00723 
+000376                00724 clear_exit:
+000376 0012           00725         return
+                      00726 
+                      00727 ;------------------------------------------------------------------------------
+                      00728 ; spawn_piece : pseudo random next piece at x = 3, y = 0
+                      00729 ;------------------------------------------------------------------------------
+000378                00730 spawn_piece:
+000378 5024           00731         movf    seed,W
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 15
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+00037A 0D05           00732         mullw   d'5'
+00037C 50F3           00733         movf    PRODL,W
+00037E 0F3D           00734         addlw   0x3D
+000380 6E24           00735         movwf   seed
+000382 0B07           00736         andlw   0x07
+000384 6E0A           00737         movwf   ptype
+000386 0E07           00738         movlw   d'7'
+000388 620A           00739         cpfseq  ptype
+00038A D001           00740         bra     spawn_type_ok
+00038C 6A0A           00741         clrf    ptype                   ; map 7 to 0 (I piece)
+                      00742 
+00038E                00743 spawn_type_ok:
+00038E 6A0B           00744         clrf    prot
+000390 0E03           00745         movlw   d'3'
+000392 6E0C           00746         movwf   px
+000394 6A0D           00747         clrf    py
+000396 500C           00748         movf    px,W
+000398 6E0E           00749         movwf   chk_x
+00039A 500D           00750         movf    py,W
+00039C 6E0F           00751         movwf   chk_y
+00039E 6A10           00752         clrf    chk_rot
+0003A0 EC96 F000      00753         call    collision
+0003A4 A0E8           00754         btfss   WREG,0
+0003A6 D002           00755         bra     spawn_done
+0003A8 0E02           00756         movlw   d'2'
+0003AA 6E23           00757         movwf   game_state              ; no room -> game over
+                      00758 
+0003AC                00759 spawn_done:
+0003AC 8009           00760         bsf     frame_dirty,0
+0003AE 0012           00761         return
+                      00762 
+                      00763 ;------------------------------------------------------------------------------
+                      00764 ; reset_game : clear board and start a new game
+                      00765 ;------------------------------------------------------------------------------
+0003B0                00766 reset_game:
+0003B0 0E00           00767         movlw   LOW(board)
+0003B2 6EE9           00768         movwf   FSR0L
+0003B4 0E01           00769         movlw   HIGH(board)
+0003B6 6EEA           00770         movwf   FSR0H
+0003B8 0EC8           00771         movlw   d'200'
+0003BA 6E29           00772         movwf   tmpx
+0003BC                00773 reset_clear_loop:
+0003BC 6AEE           00774         clrf    POSTINC0
+0003BE 0629           00775         decf    tmpx,F
+0003C0 E1FD           00776         bnz     reset_clear_loop
+                      00777 
+0003C2 6A1C           00778         clrf    score_h
+0003C4 6A1D           00779         clrf    score_l
+0003C6 6A1E           00780         clrf    line_count
+0003C8 6A1F           00781         clrf    clear_cnt
+0003CA 0E01           00782         movlw   1
+0003CC 6E20           00783         movwf   level_num
+0003CE 0E32           00784         movlw   d'50'                   ; 500 ms gravity at the beginning (50 x 10 ms)
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 16
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+0003D0 6E21           00785         movwf   grav_ms
+0003D2 6E22           00786         movwf   grav_cnt
+0003D4 6A23           00787         clrf    game_state
+0003D6 0E2F           00788         movlw   0x2F
+0003D8 2624           00789         addwf   seed,F                  ; change the piece sequence each game
+0003DA ECBC F001      00790         call    spawn_piece
+0003DE 8009           00791         bsf     frame_dirty,0
+0003E0 0012           00792         return
+                      00793 
+                      00794 ;------------------------------------------------------------------------------
+                      00795 ; do_pause : running <-> paused, or restart when game over
+                      00796 ;------------------------------------------------------------------------------
+0003E2                00797 do_pause:
+0003E2 5023           00798         movf    game_state,W
+0003E4 E006           00799         bz      pause_on
+0003E6 0E02           00800         movlw   d'2'
+0003E8 6223           00801         cpfseq  game_state
+0003EA D007           00802         bra     pause_off               ; state 1 -> resume
+0003EC ECD8 F001      00803         call    reset_game              ; state 2 -> restart
+0003F0 0012           00804         return
+                      00805 
+0003F2                00806 pause_on:
+0003F2 0E01           00807         movlw   1
+0003F4 6E23           00808         movwf   game_state
+0003F6 8009           00809         bsf     frame_dirty,0
+0003F8 0012           00810         return
+                      00811 
+0003FA                00812 pause_off:
+0003FA 6A23           00813         clrf    game_state
+0003FC 5021           00814         movf    grav_ms,W
+0003FE 6E22           00815         movwf   grav_cnt
+000400 8009           00816         bsf     frame_dirty,0
+000402 0012           00817         return
+                      00818 
+                      00819 ;------------------------------------------------------------------------------
+                      00820 ; overlay_piece : write value 2 for the active piece into txbuf
+                      00821 ;------------------------------------------------------------------------------
+000404                00822 overlay_piece:
+000404 500A           00823         movf    ptype,W
+000406 6E13           00824         movwf   gm_piece
+000408 500B           00825         movf    prot,W
+00040A 6E14           00826         movwf   gm_rot
+00040C 6A16           00827         clrf    t_r
+                      00828 
+00040E                00829 overlay_row_loop:
+00040E 5016           00830         movf    t_r,W
+000410 EC76 F000      00831         call    get_mask
+000414 0B0F           00832         andlw   0x0F
+000416 6E18           00833         movwf   t_mask
+000418 E012           00834         bz      overlay_next_row
+00041A 6A17           00835         clrf    t_c
+                      00836 
+00041C                00837 overlay_col_loop:
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 17
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+00041C A018           00838         btfss   t_mask,0
+00041E D00A           00839         bra     overlay_next_col
+000420 500D           00840         movf    py,W
+000422 2416           00841         addwf   t_r,W
+000424 0D0A           00842         mullw   d'10'
+000426 500C           00843         movf    px,W
+000428 24F3           00844         addwf   PRODL,W
+00042A 2417           00845         addwf   t_c,W
+00042C EC6F F000      00846         call    tx_ptr1
+000430 0E02           00847         movlw   0x02
+000432 6EE7           00848         movwf   INDF1
+                      00849 
+000434                00850 overlay_next_col:
+000434 4218           00851         rrncf   t_mask,F
+000436 2A17           00852         incf    t_c,F
+000438 0E04           00853         movlw   d'4'
+00043A 6217           00854         cpfseq  t_c
+00043C D7EF           00855         bra     overlay_col_loop
+                      00856 
+00043E                00857 overlay_next_row:
+00043E 2A16           00858         incf    t_r,F
+000440 0E04           00859         movlw   d'4'
+000442 6216           00860         cpfseq  t_r
+000444 D7E4           00861         bra     overlay_row_loop
+000446 0012           00862         return
+                      00863 
+                      00864 ;------------------------------------------------------------------------------
+                      00865 ; tx_byte : send W through the UART, blocking until TXREG is free
+                      00866 ;------------------------------------------------------------------------------
+000448                00867 tx_byte:
+000448 A89E           00868         btfss   PIR1,TXIF
+00044A D7FE           00869         bra     tx_byte
+00044C 6EAD           00870         movwf   TXREG
+00044E 0012           00871         return
+                      00872 
+                      00873 ;------------------------------------------------------------------------------
+                      00874 ; send_frame : build and send the complete 208 byte frame
+                      00875 ;------------------------------------------------------------------------------
+000450                00876 send_frame:
+000450 0EA5           00877         movlw   0xA5
+000452 EC24 F002      00878         call    tx_byte
+000456 0E5A           00879         movlw   0x5A
+000458 EC24 F002      00880         call    tx_byte
+00045C 0EFF           00881         movlw   0xFF                    ; preload checksum = A5 XOR 5A
+00045E 6E2A           00882         movwf   checksum
+                      00883 
+                      00884         ; ---- copy board to txbuf ----
+000460 0E00           00885         movlw   LOW(board)
+000462 6EE9           00886         movwf   FSR0L
+000464 0E01           00887         movlw   HIGH(board)
+000466 6EEA           00888         movwf   FSR0H
+000468 0E00           00889         movlw   LOW(txbuf)
+00046A 6EE1           00890         movwf   FSR1L
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 18
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+00046C 0E02           00891         movlw   HIGH(txbuf)
+00046E 6EE2           00892         movwf   FSR1H
+000470 0EC8           00893         movlw   d'200'
+000472 6E29           00894         movwf   tmpx
+000474                00895 send_copy_loop:
+000474 50EE           00896         movf    POSTINC0,W
+000476 6EE6           00897         movwf   POSTINC1
+000478 0629           00898         decf    tmpx,F
+00047A E1FC           00899         bnz     send_copy_loop
+                      00900 
+                      00901         ; ---- draw active piece unless game over ----
+00047C 0E02           00902         movlw   d'2'
+00047E 6223           00903         cpfseq  game_state
+000480 EC02 F002      00904         call    overlay_piece
+                      00905 
+                      00906         ; ---- send 200 board bytes ----
+000484 0E00           00907         movlw   LOW(txbuf)
+000486 6EE1           00908         movwf   FSR1L
+000488 0E02           00909         movlw   HIGH(txbuf)
+00048A 6EE2           00910         movwf   FSR1H
+00048C 0EC8           00911         movlw   d'200'
+00048E 6E29           00912         movwf   tmpx
+000490                00913 send_board_loop:
+000490 50E6           00914         movf    POSTINC1,W
+000492 1A2A           00915         xorwf   checksum,F
+000494 EC24 F002      00916         call    tx_byte
+000498 0629           00917         decf    tmpx,F
+00049A E1FA           00918         bnz     send_board_loop
+                      00919 
+                      00920         ; ---- score high / low, lines, level, state ----
+00049C 501C           00921         movf    score_h,W
+00049E 1A2A           00922         xorwf   checksum,F
+0004A0 EC24 F002      00923         call    tx_byte
+0004A4 501D           00924         movf    score_l,W
+0004A6 1A2A           00925         xorwf   checksum,F
+0004A8 EC24 F002      00926         call    tx_byte
+0004AC 501E           00927         movf    line_count,W
+0004AE 1A2A           00928         xorwf   checksum,F
+0004B0 EC24 F002      00929         call    tx_byte
+0004B4 5020           00930         movf    level_num,W
+0004B6 1A2A           00931         xorwf   checksum,F
+0004B8 EC24 F002      00932         call    tx_byte
+0004BC 5023           00933         movf    game_state,W
+0004BE 1A2A           00934         xorwf   checksum,F
+0004C0 EC24 F002      00935         call    tx_byte
+                      00936 
+                      00937         ; ---- checksum ----
+0004C4 502A           00938         movf    checksum,W
+0004C6 EC24 F002      00939         call    tx_byte
+0004CA 0012           00940         return
+                      00941 
+                      00942 ;------------------------------------------------------------------------------
+                      00943 ; main : initialise hardware and run the game loop
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 19
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00944 ;------------------------------------------------------------------------------
+0004CC                00945 main:
+0004CC 0E0F           00946         movlw   0x0F                    ; all analog inputs digital
+0004CE 6EC1           00947         movwf   ADCON1
+0004D0 0EFF           00948         movlw   0xFF                    ; PORTB all inputs (buttons)
+0004D2 6E93           00949         movwf   TRISB
+0004D4 9EF1           00950         bcf     INTCON2,RBPU            ; enable PORTB pull-ups
+0004D6 0E80           00951         movlw   0x80                    ; RC7 input (RX), RC6 output (TX)
+0004D8 6E94           00952         movwf   TRISC
+                      00953 
+                      00954         ; ---- Timer0 : 16 bit, internal clock, no prescaler, 1 ms ----
+0004DA 0E88           00955         movlw   0x88
+0004DC 6ED5           00956         movwf   T0CON
+0004DE 0ED8           00957         movlw   0xD8
+0004E0 6ED7           00958         movwf   TMR0H
+0004E2 0EF0           00959         movlw   0xF0
+0004E4 6ED6           00960         movwf   TMR0L
+0004E6 94F2           00961         bcf     INTCON,TMR0IF
+0004E8 8AF2           00962         bsf     INTCON,TMR0IE
+                      00963 
+                      00964         ; ---- UART : 115200 8N1, BRG16 = 1, BRGH = 1, SPBRG = 86 ----
+0004EA 0E28           00965         movlw   0x28                    ; TXEN = 1, BRGH = 1
+0004EC 6EAC           00966         movwf   TXSTA
+0004EE 0E90           00967         movlw   0x90                    ; SPEN = 1, CREN = 1
+0004F0 6EAB           00968         movwf   RCSTA
+0004F2 86B8           00969         bsf     BAUDCON,BRG16
+0004F4 0E56           00970         movlw   d'86'
+0004F6 6EAF           00971         movwf   SPBRG
+0004F8 6AB0           00972         clrf    SPBRGH
+                      00973 
+                      00974         ; ---- table reads access program memory ----
+0004FA 9CA6           00975         bcf     EECON1,CFGS
+0004FC 8EA6           00976         bsf     EECON1,EEPGD
+                      00977 
+                      00978         ; ---- variables ----
+0004FE 6A07           00979         clrf    act_flags
+000500 6A09           00980         clrf    frame_dirty
+000502 6A00           00981         clrf    tick_ms
+000504 6A01           00982         clrf    hb_cnt
+000506 6A02           00983         clrf    key_last
+000508 6A03           00984         clrf    key_stable
+00050A 6A04           00985         clrf    rep_l
+00050C 6A05           00986         clrf    rep_r
+00050E 6A06           00987         clrf    rep_d
+000510 6A22           00988         clrf    grav_cnt
+000512 0E5A           00989         movlw   0x5A
+000514 6E24           00990         movwf   seed
+                      00991 
+000516 ECD8 F001      00992         call    reset_game
+00051A 8009           00993         bsf     frame_dirty,0
+00051C 8EF2           00994         bsf     INTCON,GIE
+                      00995 
+00051E                00996 main_loop:
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 20
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+                      00997         ; ---- take a snapshot of the action flags ----
+00051E 9EF2           00998         bcf     INTCON,GIE
+000520 5007           00999         movf    act_flags,W
+000522 6E08           01000         movwf   snap
+000524 6A07           01001         clrf    act_flags
+000526 8EF2           01002         bsf     INTCON,GIE
+                      01003 
+                      01004         ; ---- pause / restart works in every state ----
+000528 AA08           01005         btfss   snap,5
+00052A D002           01006         bra     main_no_pause
+00052C ECF1 F001      01007         call    do_pause
+                      01008 
+000530                01009 main_no_pause:
+000530 5023           01010         movf    game_state,W
+000532 E001           01011         bz      main_running
+000534 D01C           01012         bra     main_send_check
+                      01013 
+000536                01014 main_running:
+000536 A008           01015         btfss   snap,0
+000538 D002           01016         bra     main_no_left
+00053A ECC3 F000      01017         call    move_left
+                      01018 
+00053E                01019 main_no_left:
+00053E A208           01020         btfss   snap,1
+000540 D002           01021         bra     main_no_right
+000542 ECD3 F000      01022         call    move_right
+                      01023 
+000546                01024 main_no_right:
+000546 A808           01025         btfss   snap,4
+000548 D002           01026         bra     main_no_rot
+00054A ECE5 F000      01027         call    do_rotate
+                      01028 
+00054E                01029 main_no_rot:
+00054E A408           01030         btfss   snap,2
+000550 D002           01031         bra     main_no_soft
+000552 EC09 F001      01032         call    soft_drop
+                      01033 
+000556                01034 main_no_soft:
+000556 A608           01035         btfss   snap,3
+000558 D004           01036         bra     main_no_hard
+00055A 5023           01037         movf    game_state,W
+00055C E102           01038         bnz     main_no_hard
+00055E EC1A F001      01039         call    hard_drop
+                      01040 
+000562                01041 main_no_hard:
+000562 AC08           01042         btfss   snap,6
+000564 D004           01043         bra     main_send_check
+000566 5023           01044         movf    game_state,W
+000568 E102           01045         bnz     main_send_check
+00056A EC09 F001      01046         call    soft_drop
+                      01047 
+00056E                01048 main_send_check:
+00056E AE08           01049         btfss   snap,7
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 21
+
+
+LOC  OBJECT CODE     LINE SOURCE TEXT
+  VALUE
+
+000570 D001           01050         bra     main_dirty
+000572 8009           01051         bsf     frame_dirty,0
+                      01052 
+000574                01053 main_dirty:
+000574 A009           01054         btfss   frame_dirty,0
+000576 D7D3           01055         bra     main_loop
+000578 9009           01056         bcf     frame_dirty,0
+00057A EC28 F002      01057         call    send_frame
+00057E D7CF           01058         bra     main_loop
+                      01059 
+                      01060 ;------------------------------------------------------------------------------
+                      01061 ; Program memory data tables
+                      01062 ;------------------------------------------------------------------------------
+000580                01063 kick_tab:
+000580 FF00 FE01 0002 01064         db      0x00, 0xFF, 0x01, 0xFE, 0x02
+                      01065 
+                      01066 ; 7 pieces x 4 rotations x 4 rows, bit0 = left column
+000586                01067 piece_table:
+000586 0F00 0000      01068         db      0x00, 0x0F, 0x00, 0x00 ; I rot0  .... / #### / .... / ....
+00058A 0404 0404      01069         db      0x04, 0x04, 0x04, 0x04 ; I rot1  ..#. / ..#. / ..#. / ..#.
+00058E 0000 000F      01070         db      0x00, 0x00, 0x0F, 0x00 ; I rot2  .... / .... / #### / ....
+000592 0202 0202      01071         db      0x02, 0x02, 0x02, 0x02 ; I rot3  .#.. / .#.. / .#.. / .#..
+000596 0606 0000      01072         db      0x06, 0x06, 0x00, 0x00 ; O rot0  .##. / .##. / .... / ....
+00059A 0606 0000      01073         db      0x06, 0x06, 0x00, 0x00 ; O rot1  .##. / .##. / .... / ....
+00059E 0606 0000      01074         db      0x06, 0x06, 0x00, 0x00 ; O rot2  .##. / .##. / .... / ....
+0005A2 0606 0000      01075         db      0x06, 0x06, 0x00, 0x00 ; O rot3  .##. / .##. / .... / ....
+0005A6 0702 0000      01076         db      0x02, 0x07, 0x00, 0x00 ; T rot0  .#.. / ###. / .... / ....
+0005AA 0C04 0004      01077         db      0x04, 0x0C, 0x04, 0x00 ; T rot1  ..#. / ..## / ..#. / ....
+0005AE 0000 040E      01078         db      0x00, 0x00, 0x0E, 0x04 ; T rot2  .... / .... / .### / ..#.
+0005B2 0200 0203      01079         db      0x00, 0x02, 0x03, 0x02 ; T rot3  .... / .#.. / ##.. / .#..
+0005B6 0306 0000      01080         db      0x06, 0x03, 0x00, 0x00 ; S rot0  .##. / ##.. / .... / ....
+0005BA 0C04 0008      01081         db      0x04, 0x0C, 0x08, 0x00 ; S rot1  ..#. / ..## / ...# / ....
+0005BE 0000 060C      01082         db      0x00, 0x00, 0x0C, 0x06 ; S rot2  .... / .... / ..## / .##.
+0005C2 0100 0203      01083         db      0x00, 0x01, 0x03, 0x02 ; S rot3  .... / #... / ##.. / .#..
+0005C6 0603 0000      01084         db      0x03, 0x06, 0x00, 0x00 ; Z rot0  ##.. / .##. / .... / ....
+0005CA 0C08 0004      01085         db      0x08, 0x0C, 0x04, 0x00 ; Z rot1  ...# / ..## / ..#. / ....
+0005CE 0000 0C06      01086         db      0x00, 0x00, 0x06, 0x0C ; Z rot2  .... / .... / .##. / ..##
+0005D2 0200 0103      01087         db      0x00, 0x02, 0x03, 0x01 ; Z rot3  .... / .#.. / ##.. / #...
+0005D6 0701 0000      01088         db      0x01, 0x07, 0x00, 0x00 ; J rot0  #... / ###. / .... / ....
+0005DA 040C 0004      01089         db      0x0C, 0x04, 0x04, 0x00 ; J rot1  ..## / ..#. / ..#. / ....
+0005DE 0000 080E      01090         db      0x00, 0x00, 0x0E, 0x08 ; J rot2  .... / .... / .### / ...#
+0005E2 0200 0302      01091         db      0x00, 0x02, 0x02, 0x03 ; J rot3  .... / .#.. / .#.. / ##..
+0005E6 0704 0000      01092         db      0x04, 0x07, 0x00, 0x00 ; L rot0  ..#. / ###. / .... / ....
+0005EA 0404 000C      01093         db      0x04, 0x04, 0x0C, 0x00 ; L rot1  ..#. / ..#. / ..## / ....
+0005EE 0000 020E      01094         db      0x00, 0x00, 0x0E, 0x02 ; L rot2  .... / .... / .### / .#..
+0005F2 0300 0202      01095         db      0x00, 0x03, 0x02, 0x02 ; L rot3  .... / ##.. / .#.. / .#..
+                      01096 
+                      01097         END
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 22
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+A                                 00000000
+ABDEN                             00000000
+ABDOVF                            00000007
+ACCESS                            00000000
+ACKDT                             00000005
+ACKEN                             00000004
+ACKSTAT                           00000006
+ACQT0                             00000003
+ACQT1                             00000004
+ACQT2                             00000005
+ADCON0                            00000FC2
+ADCON1                            00000FC1
+ADCON2                            00000FC0
+ADCS0                             00000000
+ADCS1                             00000001
+ADCS2                             00000002
+ADDEN                             00000003
+ADEN                              00000003
+ADFM                              00000007
+ADIE                              00000006
+ADIF                              00000006
+ADIP                              00000006
+ADMSK1                            00000001
+ADMSK2                            00000002
+ADMSK3                            00000003
+ADMSK4                            00000004
+ADMSK5                            00000005
+ADON                              00000000
+ADRES                             00000FC3
+ADRESH                            00000FC4
+ADRESL                            00000FC3
+AN0                               00000000
+AN1                               00000001
+AN10                              00000001
+AN11                              00000004
+AN12                              00000000
+AN2                               00000002
+AN3                               00000003
+AN4                               00000005
+AN5                               00000000
+AN6                               00000001
+AN7                               00000002
+AN8                               00000002
+AN9                               00000003
+BANKED                            00000001
+BAUDCON                           00000FB8
+BAUDCTL                           00000FB8
+BCLIE                             00000003
+BCLIF                             00000003
+BCLIP                             00000003
+BF                                00000000
+BGST                              00000005
+BOR                               00000000
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 23
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+BRG16                             00000003
+BRGH                              00000002
+BSR                               00000FE0
+C                                 00000000
+C1INV                             00000004
+C1OUT_CMCON                       00000006
+C1OUT_PORTA                       00000004
+C2INV                             00000005
+C2OUT_CMCON                       00000007
+C2OUT_PORTA                       00000005
+CCP1                              00000002
+CCP1CON                           00000FBD
+CCP1IE                            00000002
+CCP1IF                            00000002
+CCP1IP                            00000002
+CCP1M0                            00000000
+CCP1M1                            00000001
+CCP1M2                            00000002
+CCP1M3                            00000003
+CCP1X                             00000005
+CCP1Y                             00000004
+CCP2CON                           00000FBA
+CCP2IE                            00000000
+CCP2IF                            00000000
+CCP2IP                            00000000
+CCP2M0                            00000000
+CCP2M1                            00000001
+CCP2M2                            00000002
+CCP2M3                            00000003
+CCP2X                             00000005
+CCP2Y                             00000004
+CCP2_PORTB                        00000003
+CCP2_PORTC                        00000001
+CCPR1                             00000FBE
+CCPR1H                            00000FBF
+CCPR1L                            00000FBE
+CCPR2                             00000FBB
+CCPR2H                            00000FBC
+CCPR2L                            00000FBB
+CFGS                              00000006
+CHS0                              00000002
+CHS1                              00000003
+CHS2                              00000004
+CHS3                              00000005
+CIS                               00000003
+CK                                00000006
+CKE                               00000006
+CKP                               00000004
+CLKI                              00000007
+CLKO                              00000006
+CM0                               00000000
+CM1                               00000001
+CM2                               00000002
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 24
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+CMCON                             00000FB4
+CMIE                              00000006
+CMIF                              00000006
+CMIP                              00000006
+CREN                              00000004
+CS                                00000002
+CSRC                              00000007
+CVR0                              00000000
+CVR1                              00000001
+CVR2                              00000002
+CVR3                              00000003
+CVRCON                            00000FB5
+CVREF                             00000002
+CVREN                             00000007
+CVROE                             00000006
+CVRR                              00000005
+CVRSS                             00000004
+D                                 00000005
+DC                                00000001
+DC1B0                             00000004
+DC1B1                             00000005
+DC2B0                             00000004
+DC2B1                             00000005
+DDRA                              TRISA
+DDRB                              TRISB
+DDRC                              TRISC
+DDRD                              TRISD
+DDRE                              TRISE
+DONE                              00000001
+D_A                               00000005
+D_NOT_A                           00000005
+ECCP1AS                           00000FB6
+ECCP1DEL                          00000FB7
+ECCPAS                            00000FB6
+ECCPAS0                           00000004
+ECCPAS1                           00000005
+ECCPAS2                           00000006
+ECCPASE                           00000007
+EEADR                             00000FA9
+EECON1                            00000FA6
+EECON2                            00000FA7
+EEDATA                            00000FA8
+EEIE                              00000004
+EEIF                              00000004
+EEIP                              00000004
+EEPGD                             00000007
+FAST                              00000001
+FERR                              00000002
+FLT0                              00000000
+FLTS                              00000002
+FREE                              00000004
+FSR0                              00000000
+FSR0H                             00000FEA
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 25
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+FSR0L                             00000FE9
+FSR1                              00000001
+FSR1H                             00000FE2
+FSR1L                             00000FE1
+FSR2                              00000002
+FSR2H                             00000FDA
+FSR2L                             00000FD9
+GCEN                              00000007
+GIE                               00000007
+GIEH                              00000007
+GIEL                              00000006
+GIE_GIEH                          00000007
+GO                                00000001
+GO_DONE                           00000001
+GO_NOT_DONE                       00000001
+HLVDCON                           00000FD2
+HLVDEN                            00000004
+HLVDIE                            00000002
+HLVDIF                            00000002
+HLVDIN                            00000005
+HLVDIP                            00000002
+HLVDL0                            00000000
+HLVDL1                            00000001
+HLVDL2                            00000002
+HLVDL3                            00000003
+HighInt                           0000000C
+IBF                               00000007
+IBOV                              00000005
+IDLEN                             00000007
+INDF0                             00000FEF
+INDF1                             00000FE7
+INDF2                             00000FDF
+INT0                              00000000
+INT0E                             00000004
+INT0F                             00000001
+INT0IE                            00000004
+INT0IF                            00000001
+INT1                              00000001
+INT1E                             00000003
+INT1F                             00000000
+INT1IE                            00000003
+INT1IF                            00000000
+INT1IP                            00000006
+INT1P                             00000006
+INT2                              00000002
+INT2E                             00000004
+INT2F                             00000001
+INT2IE                            00000004
+INT2IF                            00000001
+INT2IP                            00000007
+INT2P                             00000007
+INTCON                            00000FF2
+INTCON2                           00000FF1
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 26
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+INTCON3                           00000FF0
+INTEDG0                           00000006
+INTEDG1                           00000005
+INTEDG2                           00000004
+INTSRC                            00000007
+IOFS                              00000002
+IPEN                              00000007
+IPR1                              00000F9F
+IPR2                              00000FA2
+IRCF0                             00000004
+IRCF1                             00000005
+IRCF2                             00000006
+IRVST                             00000005
+IVRST                             00000005
+KBI0                              00000004
+KBI1                              00000005
+KBI2                              00000006
+KBI3                              00000007
+LATA                              00000F89
+LATA0                             00000000
+LATA1                             00000001
+LATA2                             00000002
+LATA3                             00000003
+LATA4                             00000004
+LATA5                             00000005
+LATA6                             00000006
+LATA7                             00000007
+LATB                              00000F8A
+LATB0                             00000000
+LATB1                             00000001
+LATB2                             00000002
+LATB3                             00000003
+LATB4                             00000004
+LATB5                             00000005
+LATB6                             00000006
+LATB7                             00000007
+LATC                              00000F8B
+LATC0                             00000000
+LATC1                             00000001
+LATC2                             00000002
+LATC3                             00000003
+LATC4                             00000004
+LATC5                             00000005
+LATC6                             00000006
+LATC7                             00000007
+LATD                              00000F8C
+LATD0                             00000000
+LATD1                             00000001
+LATD2                             00000002
+LATD3                             00000003
+LATD4                             00000004
+LATD5                             00000005
+LATD6                             00000006
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 27
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+LATD7                             00000007
+LATE                              00000F8D
+LATE0                             00000000
+LATE1                             00000001
+LATE2                             00000002
+LVDCON                            00000FD2
+LVDEN                             00000004
+LVDIE                             00000002
+LVDIF                             00000002
+LVDIN                             00000005
+LVDIP                             00000002
+LVDL0                             00000000
+LVDL1                             00000001
+LVDL2                             00000002
+LVDL3                             00000003
+LVV0                              00000000
+LVV1                              00000001
+LVV2                              00000002
+LVV3                              00000003
+MCLR                              00000003
+N                                 00000004
+NOT_A                             00000005
+NOT_ADDRESS                       00000005
+NOT_BOR                           00000000
+NOT_CS                            00000002
+NOT_DONE                          00000001
+NOT_MCLR                          00000003
+NOT_PD                            00000002
+NOT_POR                           00000001
+NOT_RBPU                          00000007
+NOT_RD                            00000000
+NOT_RI                            00000004
+NOT_SS                            00000005
+NOT_T1SYNC                        00000002
+NOT_T3SYNC                        00000002
+NOT_TO                            00000003
+NOT_W                             00000002
+NOT_WR                            00000001
+NOT_WRITE                         00000002
+OBF                               00000006
+OERR                              00000001
+OSC1                              00000007
+OSC2                              00000006
+OSCCON                            00000FD3
+OSCFIE                            00000007
+OSCFIF                            00000007
+OSCFIP                            00000007
+OSCTUNE                           00000F9B
+OSTS                              00000003
+OV                                00000003
+P                                 00000004
+P1A                               00000002
+P1B                               00000005
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 28
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+P1C                               00000006
+P1D                               00000007
+P1M0                              00000006
+P1M1                              00000007
+PC                                00000FF9
+PCFG0                             00000000
+PCFG1                             00000001
+PCFG2                             00000002
+PCFG3                             00000003
+PCL                               00000FF9
+PCLATH                            00000FFA
+PCLATU                            00000FFB
+PD                                00000002
+PDC0                              00000000
+PDC1                              00000001
+PDC2                              00000002
+PDC3                              00000003
+PDC4                              00000004
+PDC5                              00000005
+PDC6                              00000006
+PEIE                              00000006
+PEIE_GIEL                         00000006
+PEN                               00000002
+PGC                               00000006
+PGD                               00000007
+PGM                               00000005
+PIE1                              00000F9D
+PIE2                              00000FA0
+PIR1                              00000F9E
+PIR2                              00000FA1
+PLLEN                             00000006
+PLUSW0                            00000FEB
+PLUSW1                            00000FE3
+PLUSW2                            00000FDB
+POR                               00000001
+PORTA                             00000F80
+PORTB                             00000F81
+PORTC                             00000F82
+PORTD                             00000F83
+PORTE                             00000F84
+POSTDEC0                          00000FED
+POSTDEC1                          00000FE5
+POSTDEC2                          00000FDD
+POSTINC0                          00000FEE
+POSTINC1                          00000FE6
+POSTINC2                          00000FDE
+PR2                               00000FCB
+PREINC0                           00000FEC
+PREINC1                           00000FE4
+PREINC2                           00000FDC
+PROD                              00000FF3
+PRODH                             00000FF4
+PRODL                             00000FF3
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 29
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+PRSEN                             00000007
+PSA                               00000003
+PSP0                              00000000
+PSP1                              00000001
+PSP2                              00000002
+PSP3                              00000003
+PSP4                              00000004
+PSP5                              00000005
+PSP6                              00000006
+PSP7                              00000007
+PSPIE                             00000007
+PSPIF                             00000007
+PSPIP                             00000007
+PSPMODE                           00000004
+PSSAC0                            00000002
+PSSAC1                            00000003
+PSSBD0                            00000000
+PSSBD1                            00000001
+PWM1CON                           00000FB7
+R                                 00000002
+RA0                               00000000
+RA1                               00000001
+RA2                               00000002
+RA3                               00000003
+RA4                               00000004
+RA5                               00000005
+RA6                               00000006
+RA7                               00000007
+RB0                               00000000
+RB1                               00000001
+RB2                               00000002
+RB3                               00000003
+RB4                               00000004
+RB5                               00000005
+RB6                               00000006
+RB7                               00000007
+RBIE                              00000003
+RBIF                              00000000
+RBIP                              00000000
+RBPU                              00000007
+RC0                               00000000
+RC1                               00000001
+RC2                               00000002
+RC3                               00000003
+RC4                               00000004
+RC5                               00000005
+RC6                               00000006
+RC7                               00000007
+RCEN                              00000003
+RCIDL                             00000006
+RCIE                              00000005
+RCIF                              00000005
+RCIP                              00000005
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 30
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+RCMT                              00000006
+RCON                              00000FD0
+RCREG                             00000FAE
+RCSTA                             00000FAB
+RD                                00000000
+RD0                               00000000
+RD1                               00000001
+RD16                              00000007
+RD2                               00000002
+RD3                               00000003
+RD4                               00000004
+RD5                               00000005
+RD6                               00000006
+RD7                               00000007
+RE0                               00000000
+RE1                               00000001
+RE2                               00000002
+RE3                               00000003
+RI                                00000004
+RSEN                              00000001
+RX                                00000007
+RX9                               00000006
+RX9D                              00000000
+RXDTP                             00000005
+R_NOT_W                           00000002
+R_W                               00000002
+S                                 00000003
+SBOREN                            00000006
+SCK                               00000003
+SCKP                              00000004
+SCL                               00000003
+SCS0                              00000000
+SCS1                              00000001
+SDA                               00000004
+SDI                               00000004
+SDO                               00000005
+SEN                               00000000
+SENDB                             00000003
+SMP                               00000007
+SP0                               00000000
+SP1                               00000001
+SP2                               00000002
+SP3                               00000003
+SP4                               00000004
+SPBRG                             00000FAF
+SPBRGH                            00000FB0
+SPEN                              00000007
+SREN                              00000005
+SS                                00000005
+SSPADD                            00000FC8
+SSPBUF                            00000FC9
+SSPCON1                           00000FC6
+SSPCON2                           00000FC5
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 31
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+SSPEN                             00000005
+SSPIE                             00000003
+SSPIF                             00000003
+SSPIP                             00000003
+SSPM0                             00000000
+SSPM1                             00000001
+SSPM2                             00000002
+SSPM3                             00000003
+SSPOV                             00000006
+SSPSTAT                           00000FC7
+STATUS                            00000FD8
+STKFUL                            00000007
+STKOVF                            00000007
+STKPTR                            00000FFC
+STKUNF                            00000006
+SWDTE                             00000000
+SWDTEN                            00000000
+SYNC                              00000004
+T016BIT                           00000006
+T08BIT                            00000006
+T0CKI                             00000004
+T0CON                             00000FD5
+T0CS                              00000005
+T0IE                              00000005
+T0IF                              00000002
+T0PS0                             00000000
+T0PS1                             00000001
+T0PS2                             00000002
+T0PS3                             00000003
+T0SE                              00000004
+T13CKI                            00000000
+T1CKI                             00000000
+T1CKPS0                           00000004
+T1CKPS1                           00000005
+T1CON                             00000FCD
+T1OSCEN                           00000003
+T1OSI                             00000001
+T1OSO                             00000000
+T1RUN                             00000006
+T1SYNC                            00000002
+T2CKPS0                           00000000
+T2CKPS1                           00000001
+T2CON                             00000FCA
+T2OUTPS0                          00000003
+T2OUTPS1                          00000004
+T2OUTPS2                          00000005
+T2OUTPS3                          00000006
+T3CCP1                            00000003
+T3CCP2                            00000006
+T3CKPS0                           00000004
+T3CKPS1                           00000005
+T3CON                             00000FB1
+T3SYNC                            00000002
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 32
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+TABLAT                            00000FF5
+TBLPTR                            00000FF6
+TBLPTRH                           00000FF7
+TBLPTRL                           00000FF6
+TBLPTRU                           00000FF8
+TMR0                              00000FD6
+TMR0H                             00000FD7
+TMR0IE                            00000005
+TMR0IF                            00000002
+TMR0IP                            00000002
+TMR0L                             00000FD6
+TMR0ON                            00000007
+TMR1                              00000FCE
+TMR1CS                            00000001
+TMR1H                             00000FCF
+TMR1IE                            00000000
+TMR1IF                            00000000
+TMR1IP                            00000000
+TMR1L                             00000FCE
+TMR1ON                            00000000
+TMR2                              00000FCC
+TMR2IE                            00000001
+TMR2IF                            00000001
+TMR2IP                            00000001
+TMR2ON                            00000002
+TMR3                              00000FB2
+TMR3CS                            00000001
+TMR3H                             00000FB3
+TMR3IE                            00000001
+TMR3IF                            00000001
+TMR3IP                            00000001
+TMR3L                             00000FB2
+TMR3ON                            00000000
+TO                                00000003
+TOS                               00000FFD
+TOSH                              00000FFE
+TOSL                              00000FFD
+TOSU                              00000FFF
+TOUTPS0                           00000003
+TOUTPS1                           00000004
+TOUTPS2                           00000005
+TOUTPS3                           00000006
+TRISA                             00000F92
+TRISA0                            00000000
+TRISA1                            00000001
+TRISA2                            00000002
+TRISA3                            00000003
+TRISA4                            00000004
+TRISA5                            00000005
+TRISA6                            00000006
+TRISA7                            00000007
+TRISB                             00000F93
+TRISB0                            00000000
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 33
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+TRISB1                            00000001
+TRISB2                            00000002
+TRISB3                            00000003
+TRISB4                            00000004
+TRISB5                            00000005
+TRISB6                            00000006
+TRISB7                            00000007
+TRISC                             00000F94
+TRISC0                            00000000
+TRISC1                            00000001
+TRISC2                            00000002
+TRISC3                            00000003
+TRISC4                            00000004
+TRISC5                            00000005
+TRISC6                            00000006
+TRISC7                            00000007
+TRISD                             00000F95
+TRISD0                            00000000
+TRISD1                            00000001
+TRISD2                            00000002
+TRISD3                            00000003
+TRISD4                            00000004
+TRISD5                            00000005
+TRISD6                            00000006
+TRISD7                            00000007
+TRISE                             00000F96
+TRISE0                            00000000
+TRISE1                            00000001
+TRISE2                            00000002
+TRMT                              00000001
+TUN0                              00000000
+TUN1                              00000001
+TUN2                              00000002
+TUN3                              00000003
+TUN4                              00000004
+TX                                00000006
+TX9                               00000006
+TX9D                              00000000
+TXCKP                             00000004
+TXEN                              00000005
+TXIE                              00000004
+TXIF                              00000004
+TXIP                              00000004
+TXREG                             00000FAD
+TXSTA                             00000FAC
+UA                                00000001
+VCFG0                             00000004
+VCFG1                             00000005
+VDIRMAG                           00000007
+VPP                               00000003
+VREFN                             00000002
+VREFP                             00000003
+W                                 00000000
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 34
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+WCOL                              00000007
+WDTCON                            00000FD1
+WR                                00000001
+WREG                              00000FE8
+WREN                              00000002
+WRERR                             00000003
+WUE                               00000001
+Z                                 00000002
+_BOREN_NOSLP_2L                   000000FD
+_BOREN_OFF_2L                     000000F9
+_BOREN_ON_2L                      000000FB
+_BOREN_SBORDIS_2L                 000000FF
+_BORV_0_2L                        000000E7
+_BORV_1_2L                        000000EF
+_BORV_2_2L                        000000F7
+_BORV_3_2L                        000000FF
+_CCP2MX_PORTBE_3H                 000000FE
+_CCP2MX_PORTC_3H                  000000FF
+_CONFIG1H                         00300001
+_CONFIG2H                         00300003
+_CONFIG2L                         00300002
+_CONFIG3H                         00300005
+_CONFIG4L                         00300006
+_CONFIG5H                         00300009
+_CONFIG5L                         00300008
+_CONFIG6H                         0030000B
+_CONFIG6L                         0030000A
+_CONFIG7H                         0030000D
+_CONFIG7L                         0030000C
+_CP0_OFF_5L                       000000FF
+_CP0_ON_5L                        000000FE
+_CP1_OFF_5L                       000000FF
+_CP1_ON_5L                        000000FD
+_CP2_OFF_5L                       000000FF
+_CP2_ON_5L                        000000FB
+_CP3_OFF_5L                       000000FF
+_CP3_ON_5L                        000000F7
+_CPB_OFF_5H                       000000FF
+_CPB_ON_5H                        000000BF
+_CPD_OFF_5H                       000000FF
+_CPD_ON_5H                        0000007F
+_DEBUG_OFF_4L                     000000FF
+_DEBUG_ON_4L                      0000007F
+_DEVID1                           003FFFFE
+_DEVID2                           003FFFFF
+_EBTR0_OFF_7L                     000000FF
+_EBTR0_ON_7L                      000000FE
+_EBTR1_OFF_7L                     000000FF
+_EBTR1_ON_7L                      000000FD
+_EBTR2_OFF_7L                     000000FF
+_EBTR2_ON_7L                      000000FB
+_EBTR3_OFF_7L                     000000FF
+_EBTR3_ON_7L                      000000F7
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 35
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+_EBTRB_OFF_7H                     000000FF
+_EBTRB_ON_7H                      000000BF
+_FCMEN_OFF_1H                     000000BF
+_FCMEN_ON_1H                      000000FF
+_IDLOC0                           00200000
+_IDLOC1                           00200001
+_IDLOC2                           00200002
+_IDLOC3                           00200003
+_IDLOC4                           00200004
+_IDLOC5                           00200005
+_IDLOC6                           00200006
+_IDLOC7                           00200007
+_IESO_OFF_1H                      0000007F
+_IESO_ON_1H                       000000FF
+_LPT1OSC_OFF_3H                   000000FB
+_LPT1OSC_ON_3H                    000000FF
+_LVP_OFF_4L                       000000FB
+_LVP_ON_4L                        000000FF
+_MCLRE_OFF_3H                     0000007F
+_MCLRE_ON_3H                      000000FF
+_OSC_ECIO6_1H                     000000F5
+_OSC_EC_1H                        000000F4
+_OSC_HSPLL_1H                     000000F6
+_OSC_HS_1H                        000000F2
+_OSC_INTIO67_1H                   000000F8
+_OSC_INTIO7_1H                    000000F9
+_OSC_LP_1H                        000000F0
+_OSC_RCIO6_1H                     000000F7
+_OSC_RC_1H                        000000F3
+_OSC_XT_1H                        000000F1
+_PBADEN_OFF_3H                    000000FD
+_PBADEN_ON_3H                     000000FF
+_PWRT_OFF_2L                      000000FF
+_PWRT_ON_2L                       000000FE
+_STVREN_OFF_4L                    000000FE
+_STVREN_ON_4L                     000000FF
+_WDTPS_1024_2H                    000000F5
+_WDTPS_128_2H                     000000EF
+_WDTPS_16384_2H                   000000FD
+_WDTPS_16_2H                      000000E9
+_WDTPS_1_2H                       000000E1
+_WDTPS_2048_2H                    000000F7
+_WDTPS_256_2H                     000000F1
+_WDTPS_2_2H                       000000E3
+_WDTPS_32768_2H                   000000FF
+_WDTPS_32_2H                      000000EB
+_WDTPS_4096_2H                    000000F9
+_WDTPS_4_2H                       000000E5
+_WDTPS_512_2H                     000000F3
+_WDTPS_64_2H                      000000ED
+_WDTPS_8192_2H                    000000FB
+_WDTPS_8_2H                       000000E7
+_WDT_OFF_2H                       000000FE
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 36
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+_WDT_ON_2H                        000000FF
+_WRT0_OFF_6L                      000000FF
+_WRT0_ON_6L                       000000FE
+_WRT1_OFF_6L                      000000FF
+_WRT1_ON_6L                       000000FD
+_WRT2_OFF_6L                      000000FF
+_WRT2_ON_6L                       000000FB
+_WRT3_OFF_6L                      000000FF
+_WRT3_ON_6L                       000000F7
+_WRTB_OFF_6H                      000000FF
+_WRTB_ON_6H                       000000BF
+_WRTC_OFF_6H                      000000FF
+_WRTC_ON_6H                       000000DF
+_WRTD_OFF_6H                      000000FF
+_WRTD_ON_6H                       0000007F
+_XINST_OFF_4L                     000000BF
+_XINST_ON_4L                      000000FF
+__18F4520                         00000001
+act_flags                         00000007
+board                             00000100
+board_ptr0                        000000C2
+board_ptr1                        000000D0
+checksum                          0000002A
+chk_rot                           00000010
+chk_x                             0000000E
+chk_y                             0000000F
+clear_add_100                     0000034C
+clear_add_300                     00000356
+clear_add_500                     00000360
+clear_add_800                     0000036A
+clear_add_score                   00000338
+clear_cnt                         0000001F
+clear_done                        00000318
+clear_exit                        00000376
+clear_lines                       000002BE
+clear_scan                        000002C4
+clear_scan_up                     00000310
+clear_score_done                  00000372
+clear_top_loop                    00000308
+clear_top_row                     000002FC
+col_col_loop                      00000144
+col_hit                           00000184
+col_next_col                      00000170
+col_next_row                      0000017A
+col_row_loop                      00000136
+collision                         0000012C
+do_pause                          000003E2
+do_rotate                         000001CA
+frame_dirty                       00000009
+game_state                        00000023
+get_kick                          00000118
+get_mask                          000000EC
+gm_piece                          00000013
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 37
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+gm_rot                            00000014
+grav_cnt                          00000022
+grav_ms                           00000021
+hard_drop                         00000234
+hard_lock                         00000250
+hard_loop                         00000234
+hb_cnt                            00000001
+isr_done                          00000040
+isr_scan                          00000024
+key_last                          00000002
+key_stable                        00000003
+keys_chk_down                     000000AE
+keys_chk_right                    0000009C
+keys_exit                         000000C0
+keys_held                         0000008A
+keys_same                         00000056
+kick_idx                          00000012
+kick_tab                          00000580
+level_num                         00000020
+line_count                        0000001E
+lock_col_loop                     0000026E
+lock_next_col                     00000286
+lock_next_row                     00000290
+lock_piece                        00000256
+lock_row_loop                     00000260
+main                              000004CC
+main_dirty                        00000574
+main_loop                         0000051E
+main_no_hard                      00000562
+main_no_left                      0000053E
+main_no_pause                     00000530
+main_no_right                     00000546
+main_no_rot                       0000054E
+main_no_soft                      00000556
+main_running                      00000536
+main_send_check                   0000056E
+move_left                         00000186
+move_left_ret                     000001A4
+move_right                        000001A6
+move_right_ret                    000001C8
+n_lines                           00000026
+new_rot                           00000011
+overlay_col_loop                  0000041C
+overlay_next_col                  00000434
+overlay_next_row                  0000043E
+overlay_piece                     00000404
+overlay_row_loop                  0000040E
+pause_off                         000003FA
+pause_on                          000003F2
+piece_table                       00000586
+prot                              0000000B
+ptype                             0000000A
+px                                0000000C
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 38
+
+
+SYMBOL TABLE
+  LABEL                             VALUE 
+
+py                                0000000D
+rep_d                             00000006
+rep_l                             00000004
+rep_r                             00000005
+reset_clear_loop                  000003BC
+reset_game                        000003B0
+rot_go                            000001D2
+rot_kick_loop                     000001DC
+rot_kick_next                     000001FC
+rot_ok                            00000206
+row_full                          000002A4
+row_full_loop                     000002B2
+row_full_no                       000002BC
+row_idx                           00000025
+scan_keys                         00000044
+score_h                           0000001C
+score_l                           0000001D
+seed                              00000024
+send_board_loop                   00000490
+send_copy_loop                    00000474
+send_frame                        00000450
+shift_byte_loop                   000002EE
+shift_k                           00000027
+shift_ofs                         00000028
+shift_row_loop                    000002D6
+snap                              00000008
+soft_drop                         00000212
+soft_lock                         0000022E
+spawn_done                        000003AC
+spawn_piece                       00000378
+spawn_type_ok                     0000038E
+t_c                               00000017
+t_mask                            00000018
+t_nx                              0000001A
+t_ny                              00000019
+t_r                               00000016
+t_row                             0000001B
+tbl_ofs                           00000015
+tick_ms                           00000000
+tmp_raw                           0000002B
+tmpx                              00000029
+tx_byte                           00000448
+tx_ptr1                           000000DE
+txbuf                             00000200
+MPASM 5.84             TETRIS_PIC18F4520.ASM   11-17-2026  15:00:29         PAGE 39
+
+
+MEMORY USAGE MAP ('X' = Used,  '-' = Unused)
+
+
+0000 : XXXX----XXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0040 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0080 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+00C0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0100 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0140 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0180 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+01C0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0200 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0240 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0280 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+02C0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0300 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0340 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0380 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+03C0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0400 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0440 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0480 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+04C0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0500 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0540 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+0580 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX
+05C0 : XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXXXXXXXXXXXX XXXXXX----------
+0000 : -XXX-XX-XXXXXX-- ---------------- ---------------- ----------------
+
+All other memory blocks unused.
+
+Program Memory Bytes Used:  1533
+Program Memory Bytes Free: 31235
+
+
+Errors   :     0
+Warnings :     0 reported,     0 suppressed
+Messages :     0 reported,     0 suppressed
+
+

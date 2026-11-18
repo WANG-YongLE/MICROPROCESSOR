@@ -1,0 +1,393 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="1300" viewBox="0 0 1800 1300" font-family="Microsoft JhengHei, Noto Sans TC, Arial, sans-serif">
+<defs>
+<style>
+  .bg { fill: #0b1220; }
+  .border { fill: none; stroke: #1e293b; stroke-width: 2; }
+  .title { font-size: 38px; font-weight: 700; fill: #f8fafc; }
+  .subtitle { font-size: 16px; fill: #94a3b8; }
+  .block-title { font-size: 17px; font-weight: 700; fill: #f8fafc; }
+  .chip { fill: #020617; stroke: #64748b; stroke-width: 3; }
+  .chip-head { fill: #1e293b; stroke: #64748b; stroke-width: 1.2; }
+  .pin { stroke: #475569; stroke-width: 2; }
+  .pin-used { stroke: #38bdf8; stroke-width: 2.4; }
+  .pin-label { font-size: 11px; fill: #64748b; }
+  .pin-label.used { fill: #bae6fd; font-weight: 600; }
+  .pinum { font-size: 10px; fill: #475569; }
+  .pinum.used { fill: #7dd3fc; font-weight: 700; }
+  .wire { stroke: #38bdf8; stroke-width: 2.3; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .btnwire { stroke: #f59e0b; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .gndwire { stroke: #cbd5e1; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .uart-tx { stroke: #34d399; stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .uart-rx { stroke: #c084fc; stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .icsp { stroke: #fbbf24; stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .power { stroke: #ef4444; stroke-width: 2.6; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .gnd { stroke: #cbd5e1; stroke-width: 2.2; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .cap { stroke: #e2e8f0; stroke-width: 2.6; fill: none; stroke-linecap: round; }
+  .res { fill: #0f172a; stroke: #e2e8f0; stroke-width: 2; }
+  .term { fill: #f8fafc; }
+  .node { fill: #38bdf8; }
+  .label { font-size: 12.5px; fill: #e2e8f0; }
+  .small { font-size: 11px; fill: #94a3b8; }
+  .tiny { font-size: 9.5px; fill: #cbd5e1; }
+  .pwr-label { font-size: 11px; fill: #fca5a5; font-weight: 700; }
+  .gnd-label { font-size: 10.5px; fill: #e2e8f0; font-weight: 700; }
+  .btn-label { font-size: 11px; fill: #fcd34d; font-weight: 700; }
+  .netbox { fill: #0b1220; stroke: #38bdf8; stroke-width: 1.2; }
+  .net { font-size: 10px; fill: #7dd3fc; font-weight: 700; }
+  .module { fill: #111827; stroke: #b45309; stroke-width: 2.4; }
+  .module-head { fill: #1c1917; stroke: #b45309; stroke-width: 1.2; }
+  .module-title { font-size: 16px; font-weight: 700; fill: #fbbf24; }
+  .pc { fill: #111827; stroke: #64748b; stroke-width: 2; }
+  .pc-title { font-size: 15px; font-weight: 700; fill: #e2e8f0; }
+  .note-box { fill: #0f172a; stroke: #334155; stroke-width: 1.4; }
+  .note-title { font-size: 15px; font-weight: 700; }
+  .note { font-size: 12px; fill: #cbd5e1; }
+  .foot { font-size: 11.5px; fill: #64748b; }
+</style>
+</defs>
+<rect x="0" y="0" width="1800" height="1300" class="bg"/>
+<rect x="14" y="14" width="1772" height="1272" class="border"/>
+<text x="900" y="54" class="title" text-anchor="middle">PIC18F4520 俄羅斯方塊接線圖</text>
+<text x="900" y="84" class="subtitle" text-anchor="middle">6 按鈕 · 10 MHz 晶振 + HSPLL（40 MHz）· UART 115200 8N1 · 5 V · DIP-40 俯視</text>
+<rect x="480" y="210" width="300" height="660" rx="10" class="chip"/>
+<rect x="480" y="210" width="300" height="66" rx="10" class="chip-head"/>
+<text x="630" y="242" class="block-title" text-anchor="middle">PIC18F4520-I/P</text>
+<text x="630" y="264" class="small" text-anchor="middle">DIP-40  ·  40 MHz（HSPLL）</text>
+<circle cx="452" cy="226" r="4" class="term"/>
+<text x="438" y="218" class="tiny" text-anchor="end">pin 1</text>
+<line x1="425" y1="250" x2="480" y2="250" class="pin-used"/>
+<text x="417" y="254" class="pinum used" text-anchor="end">1</text>
+<text x="492" y="254" class="pin-label used" text-anchor="start">MCLR/VPP</text>
+<line x1="425" y1="280" x2="480" y2="280" class="pin"/>
+<text x="417" y="284" class="pinum" text-anchor="end">2</text>
+<text x="492" y="284" class="pin-label" text-anchor="start">RA0</text>
+<line x1="425" y1="310" x2="480" y2="310" class="pin"/>
+<text x="417" y="314" class="pinum" text-anchor="end">3</text>
+<text x="492" y="314" class="pin-label" text-anchor="start">RA1</text>
+<line x1="425" y1="340" x2="480" y2="340" class="pin"/>
+<text x="417" y="344" class="pinum" text-anchor="end">4</text>
+<text x="492" y="344" class="pin-label" text-anchor="start">RA2</text>
+<line x1="425" y1="370" x2="480" y2="370" class="pin"/>
+<text x="417" y="374" class="pinum" text-anchor="end">5</text>
+<text x="492" y="374" class="pin-label" text-anchor="start">RA3</text>
+<line x1="425" y1="400" x2="480" y2="400" class="pin"/>
+<text x="417" y="404" class="pinum" text-anchor="end">6</text>
+<text x="492" y="404" class="pin-label" text-anchor="start">RA4</text>
+<line x1="425" y1="430" x2="480" y2="430" class="pin"/>
+<text x="417" y="434" class="pinum" text-anchor="end">7</text>
+<text x="492" y="434" class="pin-label" text-anchor="start">RA5</text>
+<line x1="425" y1="460" x2="480" y2="460" class="pin"/>
+<text x="417" y="464" class="pinum" text-anchor="end">8</text>
+<text x="492" y="464" class="pin-label" text-anchor="start">RE0</text>
+<line x1="425" y1="490" x2="480" y2="490" class="pin"/>
+<text x="417" y="494" class="pinum" text-anchor="end">9</text>
+<text x="492" y="494" class="pin-label" text-anchor="start">RE1</text>
+<line x1="425" y1="520" x2="480" y2="520" class="pin"/>
+<text x="417" y="524" class="pinum" text-anchor="end">10</text>
+<text x="492" y="524" class="pin-label" text-anchor="start">RE2</text>
+<line x1="425" y1="550" x2="480" y2="550" class="pin-used"/>
+<text x="417" y="554" class="pinum used" text-anchor="end">11</text>
+<text x="492" y="554" class="pin-label used" text-anchor="start">VDD</text>
+<line x1="425" y1="580" x2="480" y2="580" class="pin-used"/>
+<text x="417" y="584" class="pinum used" text-anchor="end">12</text>
+<text x="492" y="584" class="pin-label used" text-anchor="start">VSS</text>
+<line x1="425" y1="610" x2="480" y2="610" class="pin-used"/>
+<text x="417" y="614" class="pinum used" text-anchor="end">13</text>
+<text x="492" y="614" class="pin-label used" text-anchor="start">OSC1/RA7</text>
+<line x1="425" y1="640" x2="480" y2="640" class="pin-used"/>
+<text x="417" y="644" class="pinum used" text-anchor="end">14</text>
+<text x="492" y="644" class="pin-label used" text-anchor="start">OSC2/RA6</text>
+<line x1="425" y1="670" x2="480" y2="670" class="pin"/>
+<text x="417" y="674" class="pinum" text-anchor="end">15</text>
+<text x="492" y="674" class="pin-label" text-anchor="start">RC0</text>
+<line x1="425" y1="700" x2="480" y2="700" class="pin"/>
+<text x="417" y="704" class="pinum" text-anchor="end">16</text>
+<text x="492" y="704" class="pin-label" text-anchor="start">RC1</text>
+<line x1="425" y1="730" x2="480" y2="730" class="pin"/>
+<text x="417" y="734" class="pinum" text-anchor="end">17</text>
+<text x="492" y="734" class="pin-label" text-anchor="start">RC2</text>
+<line x1="425" y1="760" x2="480" y2="760" class="pin"/>
+<text x="417" y="764" class="pinum" text-anchor="end">18</text>
+<text x="492" y="764" class="pin-label" text-anchor="start">RC3</text>
+<line x1="425" y1="790" x2="480" y2="790" class="pin"/>
+<text x="417" y="794" class="pinum" text-anchor="end">19</text>
+<text x="492" y="794" class="pin-label" text-anchor="start">RD0</text>
+<line x1="425" y1="820" x2="480" y2="820" class="pin"/>
+<text x="417" y="824" class="pinum" text-anchor="end">20</text>
+<text x="492" y="824" class="pin-label" text-anchor="start">RD1</text>
+<line x1="780" y1="250" x2="835" y2="250" class="pin-used"/>
+<text x="843" y="254" class="pinum used" text-anchor="start">40</text>
+<text x="768" y="254" class="pin-label used" text-anchor="end">RB7/PGD</text>
+<line x1="780" y1="280" x2="835" y2="280" class="pin-used"/>
+<text x="843" y="284" class="pinum used" text-anchor="start">39</text>
+<text x="768" y="284" class="pin-label used" text-anchor="end">RB6/PGC</text>
+<line x1="780" y1="310" x2="835" y2="310" class="pin-used"/>
+<text x="843" y="314" class="pinum used" text-anchor="start">38</text>
+<text x="768" y="314" class="pin-label used" text-anchor="end">RB5</text>
+<line x1="780" y1="340" x2="835" y2="340" class="pin-used"/>
+<text x="843" y="344" class="pinum used" text-anchor="start">37</text>
+<text x="768" y="344" class="pin-label used" text-anchor="end">RB4</text>
+<line x1="780" y1="370" x2="835" y2="370" class="pin-used"/>
+<text x="843" y="374" class="pinum used" text-anchor="start">36</text>
+<text x="768" y="374" class="pin-label used" text-anchor="end">RB3</text>
+<line x1="780" y1="400" x2="835" y2="400" class="pin-used"/>
+<text x="843" y="404" class="pinum used" text-anchor="start">35</text>
+<text x="768" y="404" class="pin-label used" text-anchor="end">RB2</text>
+<line x1="780" y1="430" x2="835" y2="430" class="pin-used"/>
+<text x="843" y="434" class="pinum used" text-anchor="start">34</text>
+<text x="768" y="434" class="pin-label used" text-anchor="end">RB1</text>
+<line x1="780" y1="460" x2="835" y2="460" class="pin-used"/>
+<text x="843" y="464" class="pinum used" text-anchor="start">33</text>
+<text x="768" y="464" class="pin-label used" text-anchor="end">RB0</text>
+<line x1="780" y1="490" x2="835" y2="490" class="pin-used"/>
+<text x="843" y="494" class="pinum used" text-anchor="start">32</text>
+<text x="768" y="494" class="pin-label used" text-anchor="end">VDD</text>
+<line x1="780" y1="520" x2="835" y2="520" class="pin-used"/>
+<text x="843" y="524" class="pinum used" text-anchor="start">31</text>
+<text x="768" y="524" class="pin-label used" text-anchor="end">VSS</text>
+<line x1="780" y1="550" x2="835" y2="550" class="pin"/>
+<text x="843" y="554" class="pinum" text-anchor="start">30</text>
+<text x="768" y="554" class="pin-label" text-anchor="end">RD7</text>
+<line x1="780" y1="580" x2="835" y2="580" class="pin"/>
+<text x="843" y="584" class="pinum" text-anchor="start">29</text>
+<text x="768" y="584" class="pin-label" text-anchor="end">RD6</text>
+<line x1="780" y1="610" x2="835" y2="610" class="pin"/>
+<text x="843" y="614" class="pinum" text-anchor="start">28</text>
+<text x="768" y="614" class="pin-label" text-anchor="end">RD5</text>
+<line x1="780" y1="640" x2="835" y2="640" class="pin"/>
+<text x="843" y="644" class="pinum" text-anchor="start">27</text>
+<text x="768" y="644" class="pin-label" text-anchor="end">RD4</text>
+<line x1="780" y1="670" x2="835" y2="670" class="pin-used"/>
+<text x="843" y="674" class="pinum used" text-anchor="start">26</text>
+<text x="768" y="674" class="pin-label used" text-anchor="end">RC7/RX</text>
+<line x1="780" y1="700" x2="835" y2="700" class="pin-used"/>
+<text x="843" y="704" class="pinum used" text-anchor="start">25</text>
+<text x="768" y="704" class="pin-label used" text-anchor="end">RC6/TX</text>
+<line x1="780" y1="730" x2="835" y2="730" class="pin"/>
+<text x="843" y="734" class="pinum" text-anchor="start">24</text>
+<text x="768" y="734" class="pin-label" text-anchor="end">RC5</text>
+<line x1="780" y1="760" x2="835" y2="760" class="pin"/>
+<text x="843" y="764" class="pinum" text-anchor="start">23</text>
+<text x="768" y="764" class="pin-label" text-anchor="end">RC4</text>
+<line x1="780" y1="790" x2="835" y2="790" class="pin"/>
+<text x="843" y="794" class="pinum" text-anchor="start">22</text>
+<text x="768" y="794" class="pin-label" text-anchor="end">RD3</text>
+<line x1="780" y1="820" x2="835" y2="820" class="pin"/>
+<text x="843" y="824" class="pinum" text-anchor="start">21</text>
+<text x="768" y="824" class="pin-label" text-anchor="end">RD2</text>
+<text x="630" y="902" class="small" text-anchor="middle">DIP-40 俯視（pin 1 左上）</text>
+<line x1="425" y1="250" x2="300" y2="250" class="wire"/>
+<line x1="300" y1="162" x2="300" y2="173" class="wire"/>
+<rect x="293" y="173" width="14" height="34" rx="2" class="res"/>
+<line x1="300" y1="207" x2="300" y2="218" class="wire"/>
+<text x="316" y="194" class="tiny" text-anchor="start">R1 10k</text>
+<line x1="300" y1="218" x2="300" y2="250" class="wire"/>
+<path d="M 300 140 V 125 M 295 131 L 300 120 L 305 131" class="power"/>
+<text x="300" y="114" class="pwr-label" text-anchor="middle">+5V</text>
+<line x1="300" y1="140" x2="300" y2="162" class="power"/>
+<line x1="360" y1="250" x2="360" y2="290" class="wire"/>
+<circle cx="360" cy="250" r="3" class="node"/>
+<line x1="360" y1="290" x2="360" y2="305" class="wire"/>
+<line x1="349" y1="305" x2="371" y2="305" class="cap"/>
+<line x1="349" y1="315" x2="371" y2="315" class="cap"/>
+<line x1="360" y1="315" x2="360" y2="330" class="wire"/>
+<text x="378" y="330" class="tiny" text-anchor="start">C1 100nF</text>
+<line x1="360" y1="330" x2="360" y2="350" class="wire"/>
+<path d="M 360 350 V 358 M 347 358 H 373 M 352 365 H 368 M 357 372 H 363" class="gnd"/>
+<rect x="390" y="218" width="62" height="20" rx="4" class="netbox"/>
+<text x="421.0" y="232" class="net" text-anchor="middle">MCLR</text>
+<line x1="396" y1="238" x2="396" y2="250" class="wire"/>
+<text x="390" y="300" class="tiny" text-anchor="start">MCLR：10k 上拉 + 100nF</text>
+<line x1="425" y1="550" x2="400" y2="550" class="power"/>
+<path d="M 400 550 V 535 M 395 541 L 400 530 L 405 541" class="power"/>
+<text x="400" y="524" class="pwr-label" text-anchor="middle">+5V</text>
+<line x1="425" y1="580" x2="390" y2="580" class="gndwire"/>
+<path d="M 390 580 V 588 M 377 588 H 403 M 382 595 H 398 M 387 602 H 393" class="gnd"/>
+<line x1="835" y1="490" x2="900" y2="490" class="power"/>
+<path d="M 900 490 V 475 M 895 481 L 900 470 L 905 481" class="power"/>
+<text x="910" y="494" class="pwr-label" text-anchor="start">+5V</text>
+<line x1="835" y1="520" x2="900" y2="520" class="gndwire"/>
+<path d="M 900 520 V 528 M 887 528 H 913 M 892 535 H 908 M 897 542 H 903" class="gnd"/>
+<rect x="120" y="390" width="190" height="160" rx="10" class="note-box"/>
+<text x="215" y="414" class="small" text-anchor="middle">VDD 去耦（靠近 PIC）</text>
+<line x1="140" y1="480" x2="280" y2="480" class="power"/>
+<path d="M 140 480 V 465 M 135 471 L 140 460 L 145 471" class="power"/>
+<text x="130" y="462" class="pwr-label" text-anchor="end">+5V</text>
+<line x1="140" y1="520" x2="280" y2="520" class="gndwire"/>
+<path d="M 140 520 V 528 M 127 528 H 153 M 132 535 H 148 M 137 542 H 143" class="gnd"/>
+<line x1="190" y1="480" x2="190" y2="495" class="wire"/>
+<line x1="179" y1="495" x2="201" y2="495" class="cap"/>
+<line x1="179" y1="505" x2="201" y2="505" class="cap"/>
+<line x1="190" y1="505" x2="190" y2="520" class="wire"/>
+<text x="208" y="504" class="tiny" text-anchor="start">100nF</text>
+<line x1="250" y1="480" x2="250" y2="495" class="wire"/>
+<line x1="239" y1="495" x2="261" y2="495" class="cap"/>
+<line x1="239" y1="505" x2="261" y2="505" class="cap"/>
+<line x1="250" y1="505" x2="250" y2="520" class="wire"/>
+<text x="268" y="504" class="tiny" text-anchor="start">10uF</text>
+<text x="215" y="538" class="tiny" text-anchor="middle">與 VDD/VSS 同網路</text>
+<line x1="425" y1="610" x2="400" y2="610" class="wire"/>
+<line x1="425" y1="640" x2="400" y2="640" class="wire"/>
+<line x1="400" y1="610" x2="400" y2="618" class="wire"/>
+<line x1="390" y1="618" x2="410" y2="618" class="cap"/>
+<rect x="392" y="621" width="16" height="10" rx="1" class="res"/>
+<line x1="390" y1="632" x2="410" y2="632" class="cap"/>
+<line x1="400" y1="632" x2="400" y2="640" class="wire"/>
+<text x="474" y="600" class="tiny" text-anchor="end">X1 10MHz</text>
+<line x1="360" y1="610" x2="350" y2="610" class="wire"/>
+<circle cx="360" cy="610" r="3" class="node"/>
+<line x1="310" y1="610" x2="325" y2="610" class="wire"/>
+<line x1="325" y1="599" x2="325" y2="621" class="cap"/>
+<line x1="335" y1="599" x2="335" y2="621" class="cap"/>
+<line x1="335" y1="610" x2="350" y2="610" class="wire"/>
+<text x="330" y="592" class="tiny" text-anchor="middle">C2 22pF</text>
+<line x1="310" y1="610" x2="280" y2="610" class="wire"/>
+<line x1="360" y1="640" x2="350" y2="640" class="wire"/>
+<circle cx="360" cy="640" r="3" class="node"/>
+<line x1="310" y1="640" x2="325" y2="640" class="wire"/>
+<line x1="325" y1="629" x2="325" y2="651" class="cap"/>
+<line x1="335" y1="629" x2="335" y2="651" class="cap"/>
+<line x1="335" y1="640" x2="350" y2="640" class="wire"/>
+<text x="330" y="665" class="tiny" text-anchor="middle">C3 22pF</text>
+<line x1="310" y1="640" x2="280" y2="640" class="wire"/>
+<line x1="280" y1="610" x2="280" y2="640" class="wire"/>
+<path d="M 280 640 V 648 M 267 648 H 293 M 272 655 H 288 M 277 662 H 283" class="gnd"/>
+<text x="298" y="644" class="gnd-label" text-anchor="start">GND</text>
+<path d="M 835 310 H 1040 V 300 H 1068" class="btnwire"/>
+<line x1="1068" y1="300" x2="1088" y2="300" class="btnwire"/>
+<line x1="1112" y1="300" x2="1132" y2="300" class="btnwire"/>
+<circle cx="1088" cy="300" r="3" class="term"/>
+<circle cx="1112" cy="300" r="3" class="term"/>
+<line x1="1088" y1="291" x2="1112" y2="291" class="btnwire"/>
+<line x1="1100" y1="280" x2="1100" y2="291" class="btnwire"/>
+<text x="1100" y="272" class="btn-label" text-anchor="middle">PAUSE (RB5)</text>
+<line x1="1132" y1="300" x2="1200" y2="300" class="gndwire"/>
+<path d="M 835 340 H 1020 V 350 H 1068" class="btnwire"/>
+<line x1="1068" y1="350" x2="1088" y2="350" class="btnwire"/>
+<line x1="1112" y1="350" x2="1132" y2="350" class="btnwire"/>
+<circle cx="1088" cy="350" r="3" class="term"/>
+<circle cx="1112" cy="350" r="3" class="term"/>
+<line x1="1088" y1="341" x2="1112" y2="341" class="btnwire"/>
+<line x1="1100" y1="330" x2="1100" y2="341" class="btnwire"/>
+<text x="1100" y="322" class="btn-label" text-anchor="middle">ROTATE (RB4)</text>
+<line x1="1132" y1="350" x2="1200" y2="350" class="gndwire"/>
+<path d="M 835 370 H 1000 V 400 H 1068" class="btnwire"/>
+<line x1="1068" y1="400" x2="1088" y2="400" class="btnwire"/>
+<line x1="1112" y1="400" x2="1132" y2="400" class="btnwire"/>
+<circle cx="1088" cy="400" r="3" class="term"/>
+<circle cx="1112" cy="400" r="3" class="term"/>
+<line x1="1088" y1="391" x2="1112" y2="391" class="btnwire"/>
+<line x1="1100" y1="380" x2="1100" y2="391" class="btnwire"/>
+<text x="1100" y="372" class="btn-label" text-anchor="middle">HARD DROP (RB3)</text>
+<line x1="1132" y1="400" x2="1200" y2="400" class="gndwire"/>
+<path d="M 835 400 H 980 V 450 H 1068" class="btnwire"/>
+<line x1="1068" y1="450" x2="1088" y2="450" class="btnwire"/>
+<line x1="1112" y1="450" x2="1132" y2="450" class="btnwire"/>
+<circle cx="1088" cy="450" r="3" class="term"/>
+<circle cx="1112" cy="450" r="3" class="term"/>
+<line x1="1088" y1="441" x2="1112" y2="441" class="btnwire"/>
+<line x1="1100" y1="430" x2="1100" y2="441" class="btnwire"/>
+<text x="1100" y="422" class="btn-label" text-anchor="middle">SOFT DROP (RB2)</text>
+<line x1="1132" y1="450" x2="1200" y2="450" class="gndwire"/>
+<path d="M 835 430 H 960 V 500 H 1068" class="btnwire"/>
+<line x1="1068" y1="500" x2="1088" y2="500" class="btnwire"/>
+<line x1="1112" y1="500" x2="1132" y2="500" class="btnwire"/>
+<circle cx="1088" cy="500" r="3" class="term"/>
+<circle cx="1112" cy="500" r="3" class="term"/>
+<line x1="1088" y1="491" x2="1112" y2="491" class="btnwire"/>
+<line x1="1100" y1="480" x2="1100" y2="491" class="btnwire"/>
+<text x="1100" y="472" class="btn-label" text-anchor="middle">RIGHT (RB1)</text>
+<line x1="1132" y1="500" x2="1200" y2="500" class="gndwire"/>
+<path d="M 835 460 H 940 V 550 H 1068" class="btnwire"/>
+<line x1="1068" y1="550" x2="1088" y2="550" class="btnwire"/>
+<line x1="1112" y1="550" x2="1132" y2="550" class="btnwire"/>
+<circle cx="1088" cy="550" r="3" class="term"/>
+<circle cx="1112" cy="550" r="3" class="term"/>
+<line x1="1088" y1="541" x2="1112" y2="541" class="btnwire"/>
+<line x1="1100" y1="530" x2="1100" y2="541" class="btnwire"/>
+<text x="1100" y="522" class="btn-label" text-anchor="middle">LEFT (RB0)</text>
+<line x1="1132" y1="550" x2="1200" y2="550" class="gndwire"/>
+<line x1="1200" y1="300" x2="1200" y2="550" class="gndwire"/>
+<path d="M 1200 550 V 558 M 1187 558 H 1213 M 1192 565 H 1208 M 1197 572 H 1203" class="gnd"/>
+<text x="1218" y="554" class="gnd-label" text-anchor="start">GND</text>
+<text x="1040" y="600" class="small" text-anchor="start">RB0–RB5 內部上拉 · 按鈕接 GND · active-low</text>
+<rect x="1000" y="100" width="300" height="105" rx="10" class="module"/>
+<text x="1150" y="123" class="module-title" text-anchor="middle">ICSP（PICkit 3/4）</text>
+<circle cx="1040" cy="158" r="6" class="term"/>
+<text x="1040" y="142" class="tiny" text-anchor="middle">1</text>
+<text x="1040" y="182" class="small" text-anchor="middle">MCLR</text>
+<circle cx="1100" cy="158" r="6" class="term"/>
+<text x="1100" y="142" class="tiny" text-anchor="middle">2</text>
+<text x="1100" y="182" class="small" text-anchor="middle">+5V</text>
+<circle cx="1160" cy="158" r="6" class="term"/>
+<text x="1160" y="142" class="tiny" text-anchor="middle">3</text>
+<text x="1160" y="182" class="small" text-anchor="middle">GND</text>
+<circle cx="1220" cy="158" r="6" class="term"/>
+<text x="1220" y="142" class="tiny" text-anchor="middle">4</text>
+<text x="1220" y="182" class="small" text-anchor="middle">PGD</text>
+<circle cx="1280" cy="158" r="6" class="term"/>
+<text x="1280" y="142" class="tiny" text-anchor="middle">5</text>
+<text x="1280" y="182" class="small" text-anchor="middle">PGC</text>
+<text x="1000" y="225" class="tiny" text-anchor="start">以同名網路接到 PIC 對應腳</text>
+<line x1="835" y1="250" x2="884" y2="250" class="icsp"/>
+<rect x="888" y="236" width="54" height="20" rx="4" class="netbox"/>
+<text x="915.0" y="250" class="net" text-anchor="middle">PGD</text>
+<line x1="835" y1="280" x2="884" y2="280" class="icsp"/>
+<rect x="888" y="266" width="54" height="20" rx="4" class="netbox"/>
+<text x="915.0" y="280" class="net" text-anchor="middle">PGC</text>
+<rect x="1000" y="730" width="400" height="220" rx="12" class="module"/>
+<rect x="1000" y="730" width="400" height="38" rx="12" class="module-head"/>
+<text x="1200" y="756" class="module-title" text-anchor="middle">USB-TTL（CH340）</text>
+<circle cx="1000" cy="770" r="5" class="term"/>
+<text x="1012" y="774" class="small" text-anchor="start">GND</text>
+<circle cx="1000" cy="800" r="5" class="term"/>
+<text x="1012" y="804" class="small" text-anchor="start">RXD</text>
+<circle cx="1000" cy="830" r="5" class="term"/>
+<text x="1012" y="834" class="small" text-anchor="start">TXD</text>
+<circle cx="1000" cy="860" r="5" class="term"/>
+<text x="1012" y="864" class="small" text-anchor="start">5V</text>
+<path d="M 835 700 H 960 V 800 H 1000" class="uart-tx"/>
+<path d="M 835 670 H 920 V 830 H 1000" class="uart-rx"/>
+<text x="845" y="692" class="tiny" text-anchor="start">RC6/TX</text>
+<text x="845" y="662" class="tiny" text-anchor="start">RC7/RX</text>
+<text x="928" y="682" class="tiny" text-anchor="start">跨線不接</text>
+<line x1="1000" y1="770" x2="980" y2="770" class="gndwire"/>
+<path d="M 980 770 V 778 M 967 778 H 993 M 972 785 H 988 M 977 792 H 983" class="gnd"/>
+<line x1="1000" y1="860" x2="970" y2="860" class="power"/>
+<path d="M 970 860 V 845 M 965 851 L 970 840 L 975 851" class="power"/>
+<text x="950" y="882" class="pwr-label" text-anchor="end">+5V（可選）</text>
+<text x="1000" y="980" class="tiny" text-anchor="start">TX → RXD；RX → TXD（兩線交叉，不導通）</text>
+<text x="1000" y="1002" class="tiny" text-anchor="start">CH340 5V TTL；CP2102 3.3V 需位準轉換</text>
+<text x="1000" y="1024" class="tiny" text-anchor="start">USB-TTL 5V 可選；勿與 ICSP 5V 同時供電</text>
+<rect x="1450" y="770" width="290" height="180" rx="12" class="pc"/>
+<text x="1595" y="804" class="pc-title" text-anchor="middle">PC</text>
+<text x="1595" y="830" class="small" text-anchor="middle">C++ 監控程式</text>
+<text x="1595" y="860" class="small" text-anchor="middle">USB → COMx</text>
+<text x="1595" y="892" class="small" text-anchor="middle">115200 8N1</text>
+<line x1="1400" y1="880" x2="1450" y2="880" class="wire"/>
+<text x="1425" y="870" class="tiny" text-anchor="middle">USB</text>
+<rect x="60" y="1040" width="540" height="190" rx="10" class="note-box"/>
+<text x="80" y="1070" class="note-title" style="fill:#fbbf24" text-anchor="start">與 Lab7 參考圖的差異</text>
+<text x="80" y="1098" class="note" text-anchor="start">Lab7：1 按鈕 + 10k 下拉、4 顆 LED、MCLRE=OFF。</text>
+<text x="80" y="1120" class="note" text-anchor="start">本專題：6 按鈕 RB0–RB5、內部上拉、按鈕接 GND。</text>
+<text x="80" y="1142" class="note" text-anchor="start">按鈕是 active-low；不要照 Lab7 接 +5V + 10k 下拉。</text>
+<text x="80" y="1164" class="note" text-anchor="start">本專題不需要 LED；盤面顯示在 PC。</text>
+<text x="80" y="1186" class="note" text-anchor="start">MCLRE=ON：MCLR 要 10k 上拉 + 100nF 到 GND。</text>
+<rect x="620" y="1040" width="540" height="190" rx="10" class="note-box"/>
+<text x="640" y="1070" class="note-title" style="fill:#34d399" text-anchor="start">UART / 電源</text>
+<text x="640" y="1098" class="note" text-anchor="start">PIC RC6/TX（pin25）→ USB-TTL RXD。</text>
+<text x="640" y="1120" class="note" text-anchor="start">PIC RC7/RX（pin26）← USB-TTL TXD（可選）。</text>
+<text x="640" y="1142" class="note" text-anchor="start">UART 必須共地；CH340 用 5V TTL。</text>
+<text x="640" y="1164" class="note" text-anchor="start">CP2102 是 3.3V，需位準轉換。</text>
+<text x="640" y="1186" class="note" text-anchor="start">USB-TTL 5V 可選；勿和 ICSP 5V 同時供電。</text>
+<text x="640" y="1208" class="note" text-anchor="start">PC 只接收；本專案不從 PC 傳資料給 PIC。</text>
+<rect x="1180" y="1040" width="540" height="190" rx="10" class="note-box"/>
+<text x="1200" y="1070" class="note-title" style="fill:#7dd3fc" text-anchor="start">ICSP / 晶振 / 按鈕</text>
+<text x="1200" y="1098" class="note" text-anchor="start">ICSP：1 MCLR、2 +5V、3 GND、4 PGD、5 PGC。</text>
+<text x="1200" y="1120" class="note" text-anchor="start">RB6/RB7 與 ICSP 共用，不可接按鈕。</text>
+<text x="1200" y="1142" class="note" text-anchor="start">10 MHz 晶振 + 22pF×2；HSPLL ×4 = 40 MHz。</text>
+<text x="1200" y="1164" class="note" text-anchor="start">RB0 左、RB1 右、RB2 soft、RB3 hard。</text>
+<text x="1200" y="1186" class="note" text-anchor="start">RB4 旋轉、RB5 暫停/重啟。</text>
+<text x="1200" y="1208" class="note" text-anchor="start">VDD 11/32 +5V；VSS 12/31 GND。</text>
+<text x="60" y="1262" class="foot" text-anchor="start">接線前先斷電；用電表確認 +5V 與 GND 無短路。</text>
+</svg>
